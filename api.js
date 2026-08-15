@@ -71,6 +71,14 @@ const LocalSync = {
       list.push(String(id));
       localStorage.setItem('oqp_deleted_questions', JSON.stringify(list));
     }
+  },
+  getCustomResults() {
+    try { return JSON.parse(localStorage.getItem('oqp_custom_results') || '[]'); } catch(e) { return []; }
+  },
+  addCustomResult(result) {
+    const list = this.getCustomResults().filter(r => String(r.id) !== String(result.id));
+    list.unshift(result);
+    localStorage.setItem('oqp_custom_results', JSON.stringify(list));
   }
 };
 
@@ -681,7 +689,22 @@ const API = {
       customQuizzes.forEach(q => allMap.set(String(q.id), { ...allMap.get(String(q.id)), ...q }));
 
       let finalQuizzes = Array.from(allMap.values()).filter(q => !deletedIds.includes(String(q.id)));
-      return finalQuizzes;
+
+      // Calculate myAttempts & canAttempt dynamically from persistent results
+      const user = await API.Auth.getMe();
+      const userId = user ? String(user.id) : null;
+      const allResults = await API.Results.getAllResults();
+
+      return finalQuizzes.map(q => {
+        const myAt = userId ? allResults.filter(r => String(r.quizId) === String(q.id) && String(r.userId) === userId).length : (q.myAttempts || 0);
+        const maxAt = Number(q.maxAttempts !== undefined ? q.maxAttempts : (q.max_attempts || 0)) || 0;
+        return {
+          ...q,
+          myAttempts: myAt,
+          maxAttempts: maxAt,
+          canAttempt: maxAt <= 0 || myAt < maxAt
+        };
+      });
     },
 
     async getCategories() {
@@ -694,10 +717,17 @@ const API = {
     },
 
     async submit(quizId, payload) {
-      return await API.request(`/quizzes/${quizId}/submit`, {
+      const res = await API.request(`/quizzes/${quizId}/submit`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      if (res && res.ok && res.result) {
+        LocalSync.addCustomResult(res.result);
+        const curLocal = LocalStore.get('results', []);
+        curLocal.unshift(res.result);
+        LocalStore.set('results', curLocal);
+      }
+      return res;
     },
   },
 
@@ -705,22 +735,58 @@ const API = {
   Results: {
     async getMyResults() {
       const data = await API.request('/results/my');
-      return data.ok ? data.results : [];
+      let serverResults = data.ok ? data.results : [];
+      const user = await API.Auth.getMe();
+      const userId = user ? String(user.id) : null;
+      const localResults = LocalStore.get('results', []);
+      const customResults = LocalSync.getCustomResults();
+
+      const rMap = new Map();
+      serverResults.forEach(r => rMap.set(String(r.id), r));
+      localResults.forEach(r => { if (!rMap.has(String(r.id))) rMap.set(String(r.id), r); });
+      customResults.forEach(r => rMap.set(String(r.id), { ...rMap.get(String(r.id)), ...r }));
+
+      const all = Array.from(rMap.values());
+      return userId ? all.filter(r => String(r.userId) === userId) : all;
     },
 
     async getAllResults() {
       const data = await API.request('/results/all');
-      return data.ok ? data.results : [];
+      let serverResults = data.ok ? data.results : [];
+      const localResults = LocalStore.get('results', []);
+      const customResults = LocalSync.getCustomResults();
+
+      const rMap = new Map();
+      serverResults.forEach(r => rMap.set(String(r.id), r));
+      localResults.forEach(r => { if (!rMap.has(String(r.id))) rMap.set(String(r.id), r); });
+      customResults.forEach(r => rMap.set(String(r.id), { ...rMap.get(String(r.id)), ...r }));
+
+      return Array.from(rMap.values());
     },
 
     async getById(resultId) {
       const data = await API.request(`/results/${resultId}`);
+      if (data && data.ok && data.result) return data;
+      const allResults = await API.Results.getAllResults();
+      const resItem = allResults.find(r => String(r.id) === String(resultId));
+      if (resItem) {
+        const questions = await API.Admin.getQuestionsForQuiz(resItem.quizId);
+        return { ok: true, result: resItem, questions };
+      }
       return data;
     },
 
     async getLeaderboard(quizId) {
       const data = await API.request(`/results/leaderboard/${quizId}`);
-      return data.ok ? data.leaderboard : [];
+      let serverRes = data.ok ? data.leaderboard : [];
+      const allResults = await API.Results.getAllResults();
+      const localQuizRes = allResults.filter(r => String(r.quizId) === String(quizId));
+
+      const rMap = new Map();
+      serverRes.forEach(r => rMap.set(String(r.id), r));
+      localQuizRes.forEach(r => rMap.set(String(r.id), { ...rMap.get(String(r.id)), ...r }));
+
+      return Array.from(rMap.values()).sort((a,b) => (b.percentage || 0) - (a.percentage || 0)).slice(0, 20);
     },
 
     async getAnalyticsOverview() {
@@ -901,9 +967,22 @@ const API = {
         userMap.set(key, { ...userMap.get(key), ...u });
       });
 
-      return Array.from(userMap.values()).filter(u =>
+      const allUsers = Array.from(userMap.values()).filter(u =>
         !deletedUserIds.includes(String(u.id || u._id)) && u.role !== 'admin'
       );
+
+      // Recalculate quizAttempts dynamically from all persistent results
+      const allResults = await API.Results.getAllResults();
+      return allUsers.map(u => {
+        const uid = String(u.id || u._id);
+        const uAttempts = allResults.filter(r => String(r.userId) === uid).length;
+        return {
+          ...u,
+          id: uid,
+          quizAttempts: uAttempts,
+          quizzesAttempted: uAttempts
+        };
+      });
     },
 
     async createStudent(name, email, password) {
