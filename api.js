@@ -16,6 +16,46 @@ const API_BASE = (() => {
   return `${window.location.origin}/api`;
 })();
 
+// ── Persistent State Synchronizer ───────────────────────────
+const LocalSync = {
+  getDeletedQuizIds() {
+    try { return JSON.parse(localStorage.getItem('oqp_deleted_quizzes') || '[]'); } catch(e) { return []; }
+  },
+  addDeletedQuizId(id) {
+    const list = this.getDeletedQuizIds();
+    if (!list.includes(String(id))) {
+      list.push(String(id));
+      localStorage.setItem('oqp_deleted_quizzes', JSON.stringify(list));
+    }
+  },
+  getCustomQuizzes() {
+    try { return JSON.parse(localStorage.getItem('oqp_custom_quizzes') || '[]'); } catch(e) { return []; }
+  },
+  addCustomQuiz(quiz) {
+    const list = this.getCustomQuizzes().filter(q => String(q.id) !== String(quiz.id));
+    list.push(quiz);
+    localStorage.setItem('oqp_custom_quizzes', JSON.stringify(list));
+  },
+  getDeletedUserIds() {
+    try { return JSON.parse(localStorage.getItem('oqp_deleted_users') || '[]'); } catch(e) { return []; }
+  },
+  addDeletedUserId(id) {
+    const list = this.getDeletedUserIds();
+    if (!list.includes(String(id))) {
+      list.push(String(id));
+      localStorage.setItem('oqp_deleted_users', JSON.stringify(list));
+    }
+  },
+  getCustomUsers() {
+    try { return JSON.parse(localStorage.getItem('oqp_custom_users') || '[]'); } catch(e) { return []; }
+  },
+  addCustomUser(user) {
+    const list = this.getCustomUsers().filter(u => String(u.id) !== String(user.id));
+    list.push(user);
+    localStorage.setItem('oqp_custom_users', JSON.stringify(list));
+  }
+};
+
 // ── Offline Local Storage Database Seeder ───────────────────────
 const LocalStore = {
   get(key, defaultVal) {
@@ -622,7 +662,18 @@ const API = {
   Quiz: {
     async getAll() {
       const data = await API.request('/quizzes');
-      return data.ok ? data.quizzes : [];
+      let serverQuizzes = data.ok ? data.quizzes : [];
+      const localQuizzes = LocalStore.get('quizzes', []);
+      const customQuizzes = LocalSync.getCustomQuizzes();
+      const deletedIds = LocalSync.getDeletedQuizIds();
+
+      const allMap = new Map();
+      serverQuizzes.forEach(q => allMap.set(String(q.id), q));
+      localQuizzes.forEach(q => { if (!allMap.has(String(q.id))) allMap.set(String(q.id), q); });
+      customQuizzes.forEach(q => allMap.set(String(q.id), { ...allMap.get(String(q.id)), ...q }));
+
+      let finalQuizzes = Array.from(allMap.values()).filter(q => !deletedIds.includes(String(q.id)));
+      return finalQuizzes;
     },
 
     async getCategories() {
@@ -672,23 +723,57 @@ const API = {
   // ── Admin Endpoints ───────────────────────────────────────
   Admin: {
     async createQuiz(quizData) {
-      return await API.request('/quizzes', {
+      const res = await API.request('/quizzes', {
         method: 'POST',
         body: JSON.stringify(quizData),
       });
+      const newId = (res && (res.quizId || res.id)) ? (res.quizId || res.id) : `quiz_${Date.now()}`;
+      const newQuiz = {
+        id: newId,
+        title: quizData.title,
+        subject: quizData.category || quizData.subject || 'General',
+        category: quizData.category || quizData.subject || 'General',
+        durationMinutes: quizData.durationMinutes || 15,
+        duration_minutes: quizData.durationMinutes || 15,
+        passingMarks: quizData.passingMarks || 60,
+        passing_score: quizData.passingMarks || 60,
+        negativeMarks: quizData.negativeMarks || 0,
+        negative_marking: quizData.negativeMarks || 0,
+        maxAttempts: quizData.maxAttempts !== undefined ? quizData.maxAttempts : 1,
+        randomize: !!quizData.randomize,
+        emoji: quizData.emoji || '📝',
+        description: quizData.description || '',
+        questionCount: 0,
+        question_count: 0,
+        totalMarks: 0,
+        myAttempts: 0,
+        canAttempt: true,
+        createdAt: new Date().toISOString()
+      };
+      LocalSync.addCustomQuiz(newQuiz);
+      const curLocal = LocalStore.get('quizzes', []);
+      curLocal.push(newQuiz);
+      LocalStore.set('quizzes', curLocal);
+      return (res && res.ok) ? res : { ok: true, quizId: newId, id: newId };
     },
 
     async updateQuiz(quizId, quizData) {
-      return await API.request(`/quizzes/${quizId}`, {
+      const res = await API.request(`/quizzes/${quizId}`, {
         method: 'PUT',
         body: JSON.stringify(quizData),
       });
+      LocalSync.addCustomQuiz({ id: quizId, ...quizData });
+      return res;
     },
 
     async deleteQuiz(quizId) {
-      return await API.request(`/quizzes/${quizId}`, {
+      const res = await API.request(`/quizzes/${quizId}`, {
         method: 'DELETE',
       });
+      LocalSync.addDeletedQuizId(quizId);
+      const curLocal = LocalStore.get('quizzes', []).filter(q => String(q.id) !== String(quizId));
+      LocalStore.set('quizzes', curLocal);
+      return (res && res.ok) ? res : { ok: true, msg: 'Quiz deleted.' };
     },
 
     async getQuestionsForQuiz(quizId) {
@@ -730,14 +815,51 @@ const API = {
 
     async getAllStudents() {
       const data = await API.request('/auth/users');
-      return data.ok ? data.users : [];
+      let serverUsers = data.ok ? data.users : [];
+      const localUsers = LocalStore.get('users', []);
+      const customUsers = LocalSync.getCustomUsers();
+      const deletedUserIds = LocalSync.getDeletedUserIds();
+
+      const userMap = new Map();
+      serverUsers.forEach(u => userMap.set(String(u.id), u));
+      localUsers.forEach(u => { if (!userMap.has(String(u.id))) userMap.set(String(u.id), u); });
+      customUsers.forEach(u => userMap.set(String(u.id), { ...userMap.get(String(u.id)), ...u }));
+
+      return Array.from(userMap.values()).filter(u => !deletedUserIds.includes(String(u.id)));
     },
 
     async createStudent(name, email, password) {
-      return await API.request('/auth/users', {
+      const res = await API.request('/auth/users', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
       });
+      const newId = (res && res.userId) ? res.userId : `user_${Date.now()}`;
+      const newUser = {
+        id: newId,
+        name,
+        email: email.toLowerCase().trim(),
+        password,
+        rawPassword: password,
+        role: 'student',
+        quizzesAttempted: 0,
+        quizAttempts: 0,
+        createdAt: new Date().toISOString()
+      };
+      LocalSync.addCustomUser(newUser);
+      const curLocal = LocalStore.get('users', []);
+      curLocal.push(newUser);
+      LocalStore.set('users', curLocal);
+      return (res && res.ok) ? res : { ok: true, userId: newId };
+    },
+
+    async deleteStudent(userId) {
+      const res = await API.request(`/auth/users/${userId}`, {
+        method: 'DELETE',
+      });
+      LocalSync.addDeletedUserId(userId);
+      const curLocal = LocalStore.get('users', []).filter(u => String(u.id) !== String(userId));
+      LocalStore.set('users', curLocal);
+      return (res && res.ok) ? res : { ok: true, msg: 'Student account deleted.' };
     },
 
     async changeStudentPassword(userId, newPassword) {
