@@ -22,7 +22,26 @@ function genId(prefix) {
 }
 
 async function initDatabase() {
-  const SQL = await initSqlJs();
+  let wasmFile = null;
+  try {
+    const wasmDir = path.dirname(require.resolve('sql.js'));
+    wasmFile = path.join(wasmDir, 'sql-wasm.wasm');
+  } catch (e) {}
+
+  const SQL = await initSqlJs(
+    wasmFile && fs.existsSync(wasmFile)
+      ? { locateFile: () => wasmFile }
+      : {}
+  );
+
+  if (!fs.existsSync(DB_PATH)) {
+    const seedDbPath = path.join(__dirname, '..', 'quizportal.db');
+    if (fs.existsSync(seedDbPath)) {
+      try {
+        fs.copyFileSync(seedDbPath, DB_PATH);
+      } catch (e) {}
+    }
+  }
 
   if (fs.existsSync(DB_PATH)) {
     const fileBuffer = fs.readFileSync(DB_PATH);
