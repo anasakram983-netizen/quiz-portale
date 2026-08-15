@@ -692,11 +692,17 @@ const API = {
 
       // Calculate myAttempts & canAttempt dynamically from persistent results
       const user = await API.Auth.getMe();
-      const userId = user ? String(user.id) : null;
+      const activeUser = (typeof window !== 'undefined') ? JSON.parse(localStorage.getItem('oqp_active_user') || '{}') : {};
+      const currentUserId = String((user && user.id) || activeUser.id || activeUser._id || '');
+      const currentUserEmail = String((user && user.email) || activeUser.email || '').toLowerCase().trim();
       const allResults = await API.Results.getAllResults();
 
       return finalQuizzes.map(q => {
-        const myAt = userId ? allResults.filter(r => String(r.quizId) === String(q.id) && String(r.userId) === userId).length : (q.myAttempts || 0);
+        const myResults = allResults.filter(r => String(r.quizId) === String(q.id) && (
+          (currentUserId && String(r.userId) === currentUserId) ||
+          (currentUserEmail && String(r.userEmail || '').toLowerCase().trim() === currentUserEmail)
+        ));
+        const myAt = myResults.length;
         const maxAt = Number(q.maxAttempts !== undefined ? q.maxAttempts : (q.max_attempts || 0)) || 0;
         return {
           ...q,
@@ -737,7 +743,10 @@ const API = {
       const data = await API.request('/results/my');
       let serverResults = data.ok ? data.results : [];
       const user = await API.Auth.getMe();
-      const userId = user ? String(user.id) : null;
+      const activeUser = (typeof window !== 'undefined') ? JSON.parse(localStorage.getItem('oqp_active_user') || '{}') : {};
+      const currentUserId = String((user && user.id) || activeUser.id || activeUser._id || '');
+      const currentUserEmail = String((user && user.email) || activeUser.email || '').toLowerCase().trim();
+
       const localResults = LocalStore.get('results', []);
       const customResults = LocalSync.getCustomResults();
 
@@ -747,7 +756,10 @@ const API = {
       customResults.forEach(r => rMap.set(String(r.id), { ...rMap.get(String(r.id)), ...r }));
 
       const all = Array.from(rMap.values());
-      return userId ? all.filter(r => String(r.userId) === userId) : all;
+      return all.filter(r =>
+        (currentUserId && String(r.userId) === currentUserId) ||
+        (currentUserEmail && String(r.userEmail || '').toLowerCase().trim() === currentUserEmail)
+      );
     },
 
     async getAllResults() {
@@ -974,8 +986,13 @@ const API = {
       // Recalculate quizAttempts dynamically from all persistent results
       const allResults = await API.Results.getAllResults();
       return allUsers.map(u => {
-        const uid = String(u.id || u._id);
-        const uAttempts = allResults.filter(r => String(r.userId) === uid).length;
+        const uid = String(u.id || u._id || '');
+        const uEmail = String(u.email || '').toLowerCase().trim();
+        const uResults = allResults.filter(r =>
+          (uid && String(r.userId) === uid) ||
+          (uEmail && String(r.userEmail || '').toLowerCase().trim() === uEmail)
+        );
+        const uAttempts = uResults.length;
         return {
           ...u,
           id: uid,
