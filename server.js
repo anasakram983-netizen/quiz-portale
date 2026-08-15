@@ -497,7 +497,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/js', express.static(path.join(__dirname, 'js')));
-app.use('/css/js', express.static(path.join(__dirname, 'js')));
+app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use(express.static(path.join(__dirname)));
 
 // ── Auth Endpoints ──
@@ -709,6 +709,9 @@ app.get('/api/results/:id', verifyToken, (req, res) => {
 
 // Health check & root fallback
 app.get('/api/health', (req, res) => res.json({ ok: true, message: 'QuizPortal API Online! 🚀' }));
+app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.get('/student.html', (req, res) => res.sendFile(path.join(__dirname, 'student.html')));
+app.get('/index.html', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 async function startServer() {
