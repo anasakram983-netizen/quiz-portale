@@ -365,8 +365,8 @@ const API = {
     }
 
     if (endpoint.startsWith('/quizzes/') && method === 'PUT') {
-      const quizId = parseInt(endpoint.split('/')[2]);
-      const idx = quizzes.findIndex(q => q.id === quizId);
+      const rawQuizId = String(endpoint.split('/')[2]);
+      const idx = quizzes.findIndex(q => String(q.id) === String(rawQuizId));
       if (idx !== -1) {
         quizzes[idx] = {
           ...quizzes[idx],
@@ -383,15 +383,17 @@ const API = {
           end_time: body.end_time || body.endTime || quizzes[idx].end_time,
         };
         LocalStore.set('quizzes', quizzes);
+        LocalSync.addCustomQuiz(quizzes[idx]);
         return { ok: true, msg: 'Quiz updated successfully!' };
       }
       return { ok: false, msg: 'Quiz not found.' };
     }
 
     if (endpoint.startsWith('/quizzes/') && method === 'DELETE') {
-      const quizId = parseInt(endpoint.split('/')[2]);
-      const filtered = quizzes.filter(q => q.id !== quizId);
+      const rawQuizId = String(endpoint.split('/')[2]);
+      const filtered = quizzes.filter(q => String(q.id) !== String(rawQuizId));
       LocalStore.set('quizzes', filtered);
+      LocalSync.addDeletedQuizId(rawQuizId);
       return { ok: true, msg: 'Quiz deleted successfully!' };
     }
 
@@ -402,10 +404,10 @@ const API = {
     }
 
     if (endpoint.includes('/quizzes/') && endpoint.includes('/session') && method === 'GET') {
-      const quizId = parseInt(endpoint.split('/')[2]);
-      const quiz = quizzes.find(q => q.id === quizId);
+      const rawQuizId = String(endpoint.split('/')[2]);
+      const quiz = quizzes.find(q => String(q.id) === String(rawQuizId));
       if (!quiz) return { ok: false, msg: 'Quiz not found.' };
-      const qList = questions.filter(q => q.quiz_id === quizId || q.quizId === quizId).map(q => ({
+      const qList = questions.filter(q => String(q.quiz_id || q.quizId) === String(rawQuizId)).map(q => ({
         id: q.id,
         quizId: quiz.id,
         questionText: q.question_text || q.questionText,
@@ -431,10 +433,10 @@ const API = {
     }
 
     if (endpoint.includes('/quizzes/') && endpoint.includes('/submit') && method === 'POST') {
-      const quizId = parseInt(endpoint.split('/')[2]);
-      const quiz = quizzes.find(q => q.id === quizId);
+      const rawQuizId = String(endpoint.split('/')[2]);
+      const quiz = quizzes.find(q => String(q.id) === String(rawQuizId));
       const user = getActiveUser() || { id: 2, name: 'Ali Student', email: 'ali@student.com' };
-      const qList = questions.filter(q => q.quiz_id === quizId || q.quizId === quizId);
+      const qList = questions.filter(q => String(q.quiz_id || q.quizId) === String(rawQuizId));
 
       let totalMarks = 0;
       let earned = 0;
