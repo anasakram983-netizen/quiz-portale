@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#07070f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="QuizPortal Admin" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="msapplication-TileColor" content="#6c63ff" />
+  <title>Admin Panel — QuizPortal</title>
+  <meta name="description" content="QuizPortal Admin Panel — create and manage quizzes, questions, and view student results." />
+  <link rel="stylesheet" href="css/global.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<!-- Admin Layout -->
+<div class="admin-layout">
+
+  <!-- ════════════════════════════════════════
+       SIDEBAR
+  ════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🎯</div>
+      <div class="sidebar-logo-text">
+        <h2>QuizPortal</h2>
+        <span>Admin Panel</span>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav">
+      <div class="sidebar-section-label">Main</div>
+
+      <div class="nav-item active" data-panel="panel-dashboard">
+        <span class="nav-item-icon">📊</span>
+        Dashboard
+      </div>
+
+      <div class="nav-item" data-panel="panel-students">
+        <span class="nav-item-icon">👥</span>
+        Students
+      </div>
+
+      <div class="nav-item" data-panel="panel-builder">
+        <span class="nav-item-icon">🛠️</span>
+        Quiz Builder
+      </div>
+
+      <div class="nav-item" data-panel="panel-bank">
+        <span class="nav-item-icon">📚</span>
+        Question Bank
+      </div>
+
+      <div class="sidebar-section-label">Analytics</div>
+
+      <div class="nav-item" data-panel="panel-results">
+        <span class="nav-item-icon">🏆</span>
+        Results &amp; Leaderboard
+      </div>
+    </nav>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="admin-avatar">A</div>
+        <div class="user-details">
+          <h4 id="admin-name">Admin</h4>
+          <span>Administrator</span>
+        </div>
+      </div>
+      <button id="admin-logout-btn">
+        <span>🚪</span> Logout
+      </button>
+    </div>
+  </aside>
+  <!-- Mobile Sidebar Backdrop Overlay -->
+  <div id="admin-sidebar-overlay" class="sidebar-overlay"></div>
+
+  <!-- ════════════════════════════════════════
+       MAIN CONTENT
+  ════════════════════════════════════════ -->
+  <div class="main-content">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button id="admin-mobile-menu-btn" class="btn btn-secondary mobile-menu-btn" title="Toggle Menu">☰ Menu</button>
+        <div class="topbar-title">
+          <h2 id="topbar-title">Dashboard</h2>
+          <p id="topbar-sub">Overview &amp; Statistics</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <div class="theme-toggle-group" id="admin-accent-group" title="Choose Theme Color">
+          <div class="accent-dot active" data-accent="purple" title="Purple Theme"></div>
+          <div class="accent-dot" data-accent="blue" title="Blue Theme"></div>
+          <div class="accent-dot" data-accent="green" title="Green Theme"></div>
+          <div class="accent-dot" data-accent="orange" title="Orange Theme"></div>
+        </div>
+        <button class="theme-toggle" id="admin-theme-toggle" title="Toggle Dark/Light Mode">🌙</button>
+        <span class="badge badge-purple">🛡️ Admin</span>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="page-content">
+
+      <!-- ══════════════════════════════════
+           PANEL: DASHBOARD
+      ══════════════════════════════════ -->
+      <div class="panel active" id="panel-dashboard">
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="glass-card stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-value" id="stat-quizzes">0</div>
+            <div class="stat-label">Total Quizzes</div>
+          </div>
+          <div class="glass-card stat-card">
+            <div class="stat-icon">🎓</div>
+            <div class="stat-value" id="stat-students">0</div>
+            <div class="stat-label">Registered Students</div>
+          </div>
+          <div class="glass-card stat-card">
+            <div class="stat-icon">🚀</div>
+            <div class="stat-value" id="stat-attempts">0</div>
+            <div class="stat-label">Quiz Attempts</div>
+          </div>
+          <div class="glass-card stat-card">
+            <div class="stat-icon">❓</div>
+            <div class="stat-value" id="stat-questions">0</div>
+            <div class="stat-label">Total Questions</div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="glass-card" style="padding: 24px;">
+          <div class="section-header" style="margin-bottom: 16px;">
+            <div>
+              <h3>🕐 Recent Activity</h3>
+              <p>Latest quiz submissions</p>
+            </div>
+          </div>
+          <div id="recent-activity"></div>
+        </div>
+
+        <!-- Analytics Charts -->
+        <div style="margin-top:24px;">
+          <div class="section-header" style="margin-bottom:16px;">
+            <div>
+              <h3>📊 Performance Analytics</h3>
+              <p>Visual overview of quiz portal performance</p>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px;">
+            <!-- Pie Chart: Pass vs Fail -->
+            <div class="glass-card" style="padding:24px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                <div>
+                  <h4 style="font-size:1rem; font-weight:700;">Pass / Fail Ratio</h4>
+                  <p style="font-size:0.78rem; color:var(--text-secondary);">Overall attempt outcomes</p>
+                </div>
+                <span class="badge badge-purple">🥧 Pie Chart</span>
+              </div>
+              <div style="position:relative; width:100%; height:260px;">
+                <canvas id="chart-passfail"></canvas>
+              </div>
+            </div>
+
+            <!-- Line Chart: Daily Submissions -->
+            <div class="glass-card" style="padding:24px; grid-column:span 1;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                <div>
+                  <h4 style="font-size:1rem; font-weight:700;">Daily Activity</h4>
+                  <p style="font-size:0.78rem; color:var(--text-secondary);">Submissions last 14 days</p>
+                </div>
+                <span class="badge badge-info">📈 Line Chart</span>
+              </div>
+              <div style="position:relative; width:100%; height:260px;">
+                <canvas id="chart-daily"></canvas>
+              </div>
+            </div>
+
+            <!-- Bar Chart: Avg Scores per Quiz (Full Width) -->
+            <div class="glass-card" style="padding:24px; grid-column:1 / -1;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                <div>
+                  <h4 style="font-size:1rem; font-weight:700;">Average Scores per Quiz</h4>
+                  <p style="font-size:0.78rem; color:var(--text-secondary);">Percentage-based performance by quiz (top 10 by attempts)</p>
+                </div>
+                <span class="badge badge-success">📊 Bar Chart</span>
+              </div>
+              <div style="position:relative; width:100%; height:300px;">
+                <canvas id="chart-averages"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /panel-dashboard -->
+
+      <!-- ══════════════════════════════════
+           PANEL: STUDENTS MANAGEMENT
+      ══════════════════════════════════ -->
+      <div class="panel" id="panel-students">
+        <div class="section-header">
+          <div>
+            <h3>👥 Registered Students</h3>
+            <p>View all students, their credentials, and manage passwords</p>
+          </div>
+          <div class="results-filters">
+            <input type="text" id="students-search" class="form-input" placeholder="🔍 Search by name or email..." style="max-width: 240px;" />
+            <button class="btn btn-primary btn-sm" id="btn-open-add-student-modal">➕ Register New Student</button>
+          </div>
+        </div>
+
+        <div class="questions-table-wrap">
+          <table class="data-table" id="students-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Student</th>
+                <th>Email</th>
+                <th>Password</th>
+                <th>Role</th>
+                <th>Quizzes Attempted</th>
+                <th>Registered On</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="students-table-body">
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state" style="padding:40px 0">
+                    <div class="empty-state-icon">👥</div>
+                    <h4>Loading Students...</h4>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /panel-students -->
+
+      <!-- ══════════════════════════════════
+           PANEL: QUIZ BUILDER
+      ══════════════════════════════════ -->
+      <div class="panel" id="panel-builder">
+        <div class="builder-layout">
+
+          <!-- Left: Create Quiz Form -->
+          <div class="glass-card builder-card">
+            <h3>➕ Create New Quiz</h3>
+            <form class="builder-form" id="quiz-form" novalidate>
+
+              <div class="form-group">
+                <label class="form-label" for="quiz-title">Quiz Title *</label>
+                <input type="text" id="quiz-title" class="form-input" placeholder="e.g. General Knowledge Quiz" required />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="quiz-subject">Category / Subject</label>
+                  <input type="text" id="quiz-subject" class="form-input" placeholder="e.g. Computer Science, Math" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="quiz-emoji">Emoji Icon</label>
+                  <input type="text" id="quiz-emoji" class="form-input" placeholder="e.g. 🌍 💻 🔬 📐" maxlength="4" />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="quiz-duration">Duration (minutes)</label>
+                  <input type="number" id="quiz-duration" class="form-input" value="10" min="1" max="180" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="quiz-passing">Passing Marks</label>
+                  <input type="number" id="quiz-passing" class="form-input" value="0" min="0" />
+                </div>
+              </div>
+
+              <!-- Extra Features: Negative Marking & Attempt Limit -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="quiz-negative">Negative Marking per Wrong Ans</label>
+                  <input type="number" id="quiz-negative" class="form-input" value="0" min="0" step="0.25" placeholder="e.g. 0.25, 0.5" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="quiz-max-attempts">Max Attempts Per Student (0 = Unlimited)</label>
+                  <input type="number" id="quiz-max-attempts" class="form-input" value="5" min="0" max="100" placeholder="e.g. 1, 3, 5, or 0 for Unlimited" />
+                  <small style="color: var(--text-muted); font-size: 0.72rem;">Set attempt limit per student (or 0 for unlimited retakes).</small>
+                </div>
+              </div>
+
+              <!-- Quiz Scheduling Window -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="quiz-start-time">Start Time (Optional)</label>
+                  <input type="datetime-local" id="quiz-start-time" class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="quiz-end-time">End Time (Optional)</label>
+                  <input type="datetime-local" id="quiz-end-time" class="form-input" />
+                </div>
+              </div>
+
+              <!-- Randomization Toggle -->
+              <div class="checkbox-row">
+                <input type="checkbox" id="quiz-randomize" />
+                <label for="quiz-randomize">🔀 Randomize Questions & Options sequence for each student</label>
+              </div>
+
+              <div style="display:flex; gap:12px; margin-top:8px;">
+                <button type="submit" class="btn btn-primary" id="quiz-form-btn" style="flex:1;">➕ Create Quiz</button>
+                <button type="button" class="btn btn-secondary hidden" id="quiz-form-cancel">✖ Cancel</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Right: Quiz Cards -->
+          <div>
+            <div class="section-header">
+              <div>
+                <h3>📂 Your Quizzes</h3>
+                <p>Click "Add Question" to populate any quiz</p>
+              </div>
+            </div>
+            <!-- Category Filter Tabs for Admin -->
+            <div id="admin-category-tabs" class="category-tabs"></div>
+            <div id="quiz-cards-container"></div>
+          </div>
+
+        </div><!-- /builder-layout -->
+      </div><!-- /panel-builder -->
+
+      <!-- ══════════════════════════════════
+           PANEL: QUESTION BANK
+      ══════════════════════════════════ -->
+      <div class="panel" id="panel-bank">
+        <div class="section-header">
+          <div>
+            <h3>📚 Question Bank</h3>
+            <p>View, manage and bulk-import questions</p>
+          </div>
+          <div class="results-filters">
+            <select id="bank-quiz-filter" class="form-select">
+              <option value="">All Quizzes</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btn-open-csv-modal">📥 Bulk CSV Import</button>
+          </div>
+        </div>
+
+        <div class="questions-table-wrap">
+          <table class="data-table" id="bank-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Question</th>
+                <th>Type</th>
+                <th>Quiz</th>
+                <th>Marks</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="bank-table-body">
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state" style="padding:40px 0">
+                    <div class="empty-state-icon">❓</div>
+                    <h4>No Questions Yet</h4>
+                    <p>Add questions via the Quiz Builder or CSV Import.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /panel-bank -->
+
+      <!-- ══════════════════════════════════
+           PANEL: RESULTS & LEADERBOARD
+      ══════════════════════════════════ -->
+      <div class="panel" id="panel-results">
+        <div class="section-header">
+          <div>
+            <h3>🏆 Results &amp; Leaderboard</h3>
+            <p>Student performance overview</p>
+          </div>
+          <div>
+            <button class="btn btn-success btn-sm" id="btn-export-csv">📊 Export Results (CSV)</button>
+          </div>
+        </div>
+
+        <div class="results-filters">
+          <select id="results-quiz-filter" class="form-select">
+            <option value="">All Quizzes</option>
+          </select>
+        </div>
+
+        <div class="questions-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Student</th>
+                <th>Quiz</th>
+                <th>Score</th>
+                <th>Percentage</th>
+                <th>Status</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="results-table-body">
+              <tr>
+                <td colspan="7">
+                  <div class="empty-state" style="padding:40px 0">
+                    <div class="empty-state-icon">📊</div>
+                    <h4>No Results Yet</h4>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /panel-results -->
+
+    </div><!-- /page-content -->
+  </div><!-- /main-content -->
+</div><!-- /admin-layout -->
+
+<!-- ════════════════════════════════════════
+     ADD / EDIT QUESTION MODAL (DYNAMIC OPTIONS)
+════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="add-question-modal" role="dialog" aria-modal="true">
+  <div class="modal-box" style="max-width: 620px;">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-q-title">➕ Add Question</h2>
+      <button class="modal-close" id="add-q-close" aria-label="Close">✕</button>
+    </div>
+    <div style="margin-bottom: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+      Adding to: <strong id="add-q-quiz-name" style="color: var(--text-primary);"></strong>
+    </div>
+
+    <form id="add-question-form" novalidate>
+
+      <!-- Question Text -->
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="q-text">Question Text *</label>
+        <textarea id="q-text" class="form-input form-textarea" placeholder="Enter your question here..." rows="3" required></textarea>
+      </div>
+
+      <!-- Optional Code Snippet -->
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="q-code-snippet">Code Snippet (Optional)</label>
+        <textarea id="q-code-snippet" class="form-input" placeholder="e.g. console.log(0.1 + 0.2 === 0.3);" rows="2" style="font-family: monospace; font-size: 0.85rem;"></textarea>
+      </div>
+
+      <!-- Question Type Tabs -->
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label">Question Type</label>
+        <div class="q-type-tabs">
+          <button type="button" class="q-type-tab active" data-type="mcq">🔘 MCQ (Dynamic)</button>
+          <button type="button" class="q-type-tab" data-type="truefalse">✅ True/False</button>
+          <button type="button" class="q-type-tab" data-type="fillblank">📝 Fill in Blank</button>
+        </div>
+      </div>
+
+      <!-- Dynamic MCQ Panel -->
+      <div class="q-type-panel" data-for="mcq" style="margin-bottom: 20px;">
+        <label class="form-label" style="margin-bottom: 10px;">Options &amp; Correct Answer (select radio = correct)</label>
+        <!-- Container for dynamic options -->
+        <div class="options-builder" id="dynamic-options-container">
+          <!-- Filled dynamically by admin.js -->
+        </div>
+        <button type="button" class="add-option-btn" id="btn-add-option">➕ Add Another Option</button>
+      </div>
+
+      <!-- True/False Panel -->
+      <div class="q-type-panel hidden" data-for="truefalse" style="margin-bottom: 20px;">
+        <label class="form-label" style="margin-bottom: 10px;">Correct Answer</label>
+        <div style="display: flex; gap: 20px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem;">
+            <input type="radio" name="tf-answer" value="True" style="accent-color:var(--accent-start);" />
+            ✅ True
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem;">
+            <input type="radio" name="tf-answer" value="False" style="accent-color:var(--accent-start);" />
+            ❌ False
+          </label>
+        </div>
+      </div>
+
+      <!-- Fill in the Blank Panel -->
+      <div class="q-type-panel hidden" data-for="fillblank" style="margin-bottom: 20px;">
+        <div class="form-group">
+          <label class="form-label" for="fill-answer">Correct Answer *</label>
+          <input type="text" id="fill-answer" class="form-input" placeholder="The exact correct answer" />
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Answer matching is case-insensitive.</small>
+        </div>
+      </div>
+
+      <!-- Explanation Field for Detailed Answer Review -->
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="q-explanation">Explanation / Solution Details (Optional)</label>
+        <textarea id="q-explanation" class="form-input" placeholder="Explain why the correct answer is right (shown to student after quiz submission)" rows="2"></textarea>
+      </div>
+
+      <!-- Marks -->
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="q-marks">Marks for this Question</label>
+        <input type="number" id="q-marks" class="form-input" value="1" min="1" max="10" style="max-width: 120px;" />
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="add-q-cancel-btn" onclick="closeAddQuestion()">Cancel</button>
+        <button type="submit" class="btn btn-primary">✅ Save Question</button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     CSV BULK IMPORT MODAL
+════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="csv-import-modal" role="dialog" aria-modal="true">
+  <div class="modal-box" style="max-width: 520px;">
+    <div class="modal-header">
+      <h2 class="modal-title">📥 Bulk CSV Question Import</h2>
+      <button class="modal-close" id="csv-modal-close" aria-label="Close">✕</button>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 20px;">
+      <label class="form-label" for="csv-target-quiz">Target Quiz *</label>
+      <select id="csv-target-quiz" class="form-select" required>
+        <option value="">-- Select Quiz --</option>
+      </select>
+    </div>
+
+    <div class="csv-import-area" id="csv-drop-zone">
+      <div class="csv-icon">📄</div>
+      <p>Click here to select a CSV file or drag and drop</p>
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
+      <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('csv-file-input').click()">Browse File</button>
+      <small>CSV Header format: <code>questionText, type, optionA, optionB, optionC, optionD, correctOption, marks, explanation</code></small>
+    </div>
+
+    <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+      <button type="button" class="btn btn-sm btn-secondary" id="btn-download-sample-csv">📥 Download Sample CSV</button>
+      <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('csv-import-modal').classList.add('hidden')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     CHANGE STUDENT PASSWORD MODAL
+════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="change-password-modal" role="dialog" aria-modal="true">
+  <div class="modal-box" style="max-width: 460px;">
+    <div class="modal-header">
+      <h2 class="modal-title">🔑 Change Student Password</h2>
+      <button class="modal-close" id="pwd-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div style="margin-bottom: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+      Student: <strong id="pwd-student-name" style="color: var(--text-primary);"></strong>
+      <br />
+      <span id="pwd-student-email" style="color: var(--text-muted);"></span>
+    </div>
+
+    <form id="change-password-form" novalidate>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" for="pwd-new-password">New Password *</label>
+        <input type="text" id="pwd-new-password" class="form-input" placeholder="Enter new password (min 4 chars)" minlength="4" required />
+        <small style="color: var(--text-muted); font-size: 0.75rem;">Password will be visible to this student in the Students list.</small>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="pwd-confirm-password">Confirm New Password *</label>
+        <input type="text" id="pwd-confirm-password" class="form-input" placeholder="Re-type the new password" minlength="4" required />
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="pwd-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">✅ Update Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     REGISTER NEW STUDENT MODAL (ADMIN ONLY)
+════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="add-student-modal" role="dialog" aria-modal="true">
+  <div class="modal-box" style="max-width: 480px;">
+    <div class="modal-header">
+      <h2 class="modal-title">➕ Register New Student</h2>
+      <button class="modal-close" id="add-student-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div style="margin-bottom: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+      Enter student details below to create their login account.
+    </div>
+
+    <form id="add-student-form" novalidate>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" for="add-stud-name">Full Name *</label>
+        <input type="text" id="add-stud-name" class="form-input" placeholder="e.g. Usama Khan" required />
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" for="add-stud-email">Email Address *</label>
+        <input type="email" id="add-stud-email" class="form-input" placeholder="student@example.com" required />
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="add-stud-password">Password *</label>
+        <input type="text" id="add-stud-password" class="form-input" placeholder="Enter student password (min 4 chars)" minlength="4" required />
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="add-student-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">🎉 Create Student Account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
