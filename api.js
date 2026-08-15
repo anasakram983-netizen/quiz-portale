@@ -53,6 +53,24 @@ const LocalSync = {
     const list = this.getCustomUsers().filter(u => String(u.id) !== String(user.id));
     list.push(user);
     localStorage.setItem('oqp_custom_users', JSON.stringify(list));
+  },
+  getCustomQuestions() {
+    try { return JSON.parse(localStorage.getItem('oqp_custom_questions') || '[]'); } catch(e) { return []; }
+  },
+  addCustomQuestion(q) {
+    const list = this.getCustomQuestions().filter(item => String(item.id) !== String(q.id));
+    list.push(q);
+    localStorage.setItem('oqp_custom_questions', JSON.stringify(list));
+  },
+  getDeletedQuestionIds() {
+    try { return JSON.parse(localStorage.getItem('oqp_deleted_questions') || '[]'); } catch(e) { return []; }
+  },
+  addDeletedQuestionId(id) {
+    const list = this.getDeletedQuestionIds();
+    if (!list.includes(String(id))) {
+      list.push(String(id));
+      localStorage.setItem('oqp_deleted_questions', JSON.stringify(list));
+    }
   }
 };
 
@@ -780,32 +798,93 @@ const API = {
 
     async getQuestionsForQuiz(quizId) {
       const data = await API.request(`/questions/quiz/${quizId}`);
-      return data.ok ? data.questions : [];
+      let serverQuestions = data.ok ? data.questions : [];
+      const localQuestions = LocalStore.get('questions', []);
+      const customQuestions = LocalSync.getCustomQuestions();
+      const deletedQIds = LocalSync.getDeletedQuestionIds();
+
+      const qMap = new Map();
+      serverQuestions.forEach(q => qMap.set(String(q.id), q));
+      localQuestions.filter(q => String(q.quizId || q.quiz_id) === String(quizId)).forEach(q => { if (!qMap.has(String(q.id))) qMap.set(String(q.id), q); });
+      customQuestions.filter(q => String(q.quizId || q.quiz_id) === String(quizId)).forEach(q => qMap.set(String(q.id), { ...qMap.get(String(q.id)), ...q }));
+
+      return Array.from(qMap.values()).filter(q => !deletedQIds.includes(String(q.id)));
     },
 
     async getAllQuestions() {
       const data = await API.request('/questions/all');
-      return data.ok ? data.questions : [];
+      let serverQuestions = data.ok ? data.questions : [];
+      const localQuestions = LocalStore.get('questions', []);
+      const customQuestions = LocalSync.getCustomQuestions();
+      const deletedQIds = LocalSync.getDeletedQuestionIds();
+
+      const qMap = new Map();
+      serverQuestions.forEach(q => qMap.set(String(q.id), q));
+      localQuestions.forEach(q => { if (!qMap.has(String(q.id))) qMap.set(String(q.id), q); });
+      customQuestions.forEach(q => qMap.set(String(q.id), { ...qMap.get(String(q.id)), ...q }));
+
+      return Array.from(qMap.values()).filter(q => !deletedQIds.includes(String(q.id)));
     },
 
     async createQuestion(questionData) {
-      return await API.request('/questions', {
+      const res = await API.request('/questions', {
         method: 'POST',
         body: JSON.stringify(questionData),
       });
+      const newQId = (res && (res.questionId || res.id)) ? (res.questionId || res.id) : `q_${Date.now()}`;
+      const newQ = {
+        id: newQId,
+        quizId: questionData.quizId,
+        quiz_id: questionData.quizId,
+        type: questionData.type || 'mcq',
+        questionText: questionData.questionText,
+        question_text: questionData.questionText,
+        codeSnippet: questionData.codeSnippet || null,
+        code_snippet: questionData.codeSnippet || null,
+        options: questionData.options || [],
+        correctOption: questionData.correctOption,
+        correct_option: questionData.correctOption,
+        correctAnswer: questionData.correctOption,
+        marks: Number(questionData.marks) || 1,
+        points: Number(questionData.marks) || 1,
+        explanation: questionData.explanation || ''
+      };
+      LocalSync.addCustomQuestion(newQ);
+      const curLocal = LocalStore.get('questions', []);
+      curLocal.push(newQ);
+      LocalStore.set('questions', curLocal);
+
+      // Increment question count in matching quiz in LocalSync and LocalStore
+      const quizzes = LocalStore.get('quizzes', []);
+      const quizIdx = quizzes.findIndex(q => String(q.id) === String(questionData.quizId));
+      if (quizIdx !== -1) {
+        quizzes[quizIdx].questionCount = (quizzes[quizIdx].questionCount || 0) + 1;
+        quizzes[quizIdx].question_count = quizzes[quizIdx].questionCount;
+        quizzes[quizIdx].totalMarks = (quizzes[quizIdx].totalMarks || 0) + (Number(questionData.marks) || 1);
+        LocalStore.set('quizzes', quizzes);
+        LocalSync.addCustomQuiz(quizzes[quizIdx]);
+      }
+
+      return (res && res.ok) ? res : { ok: true, questionId: newQId, id: newQId };
     },
 
     async updateQuestion(qId, questionData) {
-      return await API.request(`/questions/${qId}`, {
+      const res = await API.request(`/questions/${qId}`, {
         method: 'PUT',
         body: JSON.stringify(questionData),
       });
+      LocalSync.addCustomQuestion({ id: qId, ...questionData });
+      return res;
     },
 
     async deleteQuestion(qId) {
-      return await API.request(`/questions/${qId}`, {
+      const res = await API.request(`/questions/${qId}`, {
         method: 'DELETE',
       });
+      LocalSync.addDeletedQuestionId(qId);
+      const curLocal = LocalStore.get('questions', []).filter(q => String(q.id) !== String(qId));
+      LocalStore.set('questions', curLocal);
+      return (res && res.ok) ? res : { ok: true, msg: 'Question deleted.' };
     },
 
     async importCsvQuestions(quizId, questions) {
