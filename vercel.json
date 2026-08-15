@@ -1,55 +1,5 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "server/**",
-          "css/**",
-          "js/**",
-          "admin.html",
-          "student.html",
-          "index.html",
-          "quizportal.db",
-          "node_modules/sql.js/dist/sql-wasm.wasm"
-        ]
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server.js"
-    },
-    {
-      "src": "/js/(.*)",
-      "dest": "server.js"
-    },
-    {
-      "src": "/css/(.*)",
-      "dest": "server.js"
-    },
-    {
-      "src": "/admin\\.html",
-      "dest": "server.js"
-    },
-    {
-      "src": "/student\\.html",
-      "dest": "server.js"
-    },
-    {
-      "src": "/index\\.html",
-      "dest": "server.js"
-    },
-    {
-      "src": "/",
-      "dest": "server.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
   ]
 }
