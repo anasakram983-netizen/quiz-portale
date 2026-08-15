@@ -2,52 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "css/**",
-          "js/**",
-          "admin.html",
-          "student.html",
-          "index.html",
-          "quizportal.db"
-        ]
-      }
+      "src": "server.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/js/(.*)",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/css/(.*)",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/admin\\.html",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/student\\.html",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/index\\.html",
-      "dest": "api/index.js"
-    },
-    {
-      "src": "/",
-      "dest": "api/index.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "api/index.js"
+      "dest": "server.js"
     }
   ]
 }
