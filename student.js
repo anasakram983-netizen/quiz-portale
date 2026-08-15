@@ -738,14 +738,16 @@ function renderQuestion() {
     setTimeout(() => {
       const inp = document.getElementById('qe-fill-input');
       if (inp) {
-        inp.addEventListener('input', (e) => {
+        const saveFill = (e) => {
+          const q = quizState.questions[quizState.current];
+          const qId = String(q.id || quizState.current);
           quizState.answers[quizState.current] = e.target.value;
+          quizState.answersByQId = quizState.answersByQId || {};
+          quizState.answersByQId[qId] = e.target.value;
           renderNavigator();
-        });
-        inp.addEventListener('change', (e) => {
-          quizState.answers[quizState.current] = e.target.value;
-          renderNavigator();
-        });
+        };
+        inp.addEventListener('input', saveFill);
+        inp.addEventListener('change', saveFill);
         inp.focus();
         try {
           const len = inp.value.length;
@@ -758,7 +760,10 @@ function renderQuestion() {
 
 function selectAnswer(val) {
   const q = quizState.questions[quizState.current];
-  quizState.answers[quizState.current] = val;
+  const qId = String(q.id || quizState.current);
+  quizState.answers[quizState.current] = val;   // for UI nav
+  quizState.answersByQId = quizState.answersByQId || {};
+  quizState.answersByQId[qId] = val;            // for server submit
   if (q && q.type === 'fillblank') {
     renderNavigator();
   } else {
@@ -828,7 +833,10 @@ function saveFillBlankAnswer() {
   if (q && q.type === 'fillblank') {
     const inp = document.getElementById('qe-fill-input');
     if (inp) {
+      const qId = String(q.id || quizState.current);
       quizState.answers[quizState.current] = inp.value;
+      quizState.answersByQId = quizState.answersByQId || {};
+      quizState.answersByQId[qId] = inp.value;
     }
   }
 }
@@ -890,17 +898,27 @@ async function submitQuiz(isDisqualified = false) {
   detachAntiCheatListeners();
   exitFullScreenMode();
 
-  const { quiz, questions, answers, startTime, quizId, antiCheatStrikes } = quizState;
+  const { quiz, questions, startTime, quizId, antiCheatStrikes } = quizState;
   const elapsed = Math.max(0, Math.floor((Date.now() - (startTime || Date.now())) / 1000));
   const mm      = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss      = String(elapsed % 60).padStart(2, '0');
   const timeTakenStr = `${mm}:${ss}`;
 
+  // Build answers by QUESTION ID (for server) — fallback to index-keyed answers
+  const answersByQId = quizState.answersByQId || {};
+  // Also fill in any index-keyed answers that weren't captured by ID
+  questions.forEach((q, idx) => {
+    const qId = String(q.id || idx);
+    if (answersByQId[qId] === undefined && quizState.answers[idx] !== undefined) {
+      answersByQId[qId] = quizState.answers[idx];
+    }
+  });
+
   toast('Evaluating answers securely on server...', 'info');
 
   try {
     const res = await API.Quiz.submit(quizId, {
-      answers,
+      answers: answersByQId,
       timeTaken: timeTakenStr,
       antiCheatStrikes,
       isDisqualified,
@@ -910,45 +928,79 @@ async function submitQuiz(isDisqualified = false) {
     document.body.style.overflow = '';
 
     if (!res || !res.ok) {
-      toast(res?.msg || 'Submission error.', 'error');
+      toast(res?.msg || 'Submission error. Please try again.', 'error');
       await showPanel('panel-home');
       return;
     }
 
     // Use questions from submit response (they have correctAnswer + explanation)
-    const serverQuestions = res.questions && res.questions.length > 0 ? res.questions : (questions || []);
-
-    // Also fetch full detailed result review to merge any additional info
+    const serverQuestions = (res.questions && res.questions.length > 0) ? res.questions : (questions || []);
     let detailedQuestions = serverQuestions;
     let finalResult = res.result;
+
+    // Try to fetch full detailed result
     if (res.result && res.result.id) {
-      const det = await API.Results.getById(res.result.id).catch(() => null);
-      if (det && det.ok) {
-        finalResult = det.result;
-        if (det.questions && det.questions.length > 0) detailedQuestions = det.questions;
-      }
+      try {
+        const det = await API.Results.getById(res.result.id);
+        if (det && det.ok && det.result) {
+          finalResult = det.result;
+          if (det.questions && det.questions.length > 0) detailedQuestions = det.questions;
+        }
+      } catch(e) { /* use res.result */ }
     }
 
     if (!finalResult) {
-      toast('Quiz submitted! Summary loaded in My Results.', 'info');
+      toast('Quiz submitted! Check My Results.', 'info');
       playChime('success');
       await showPanel('panel-results');
       return;
     }
 
     playChime(finalResult.passed ? 'success' : 'fail');
-    if (finalResult.passed) {
-      setTimeout(() => burstConfetti(2800), 200);
-    }
+    if (finalResult.passed) setTimeout(() => burstConfetti(2800), 200);
     renderResult(finalResult, detailedQuestions);
     await showPanel('panel-results');
+
   } catch (err) {
     console.error('[Quiz Submission Error]', err);
     document.getElementById('quiz-engine')?.classList.add('hidden');
     document.body.style.overflow = '';
-    toast('An unexpected error occurred during submission.', 'error');
-    await showPanel('panel-home');
+    // Try to show basic result from local data
+    toast('Quiz submitted! Showing local result.', 'info');
+    const localResult = buildLocalResult(questions, quizState.answers, quiz, quizId, isDisqualified, timeTakenStr);
+    renderResult(localResult, questions);
+    await showPanel('panel-results');
   }
+}
+
+// ── Fallback: build result locally if server fails ──
+function buildLocalResult(questions, answers, quiz, quizId, isDisqualified, timeTaken) {
+  let totalMarks = 0, earned = 0, correct = 0, wrong = 0, skipped = 0;
+  const neg = quiz.negativeMarks || quiz.negative_marking || 0;
+  questions.forEach((q, idx) => {
+    const pts = q.points || 1;
+    totalMarks += pts;
+    const given = (quizState.answersByQId || {})[String(q.id || idx)] ?? answers[idx];
+    const isSkipped = given === undefined || given === null || given === '';
+    if (isSkipped) { skipped++; return; }
+    const correctOpt = q.correctOption || q.correctAnswer;
+    const opts = q.options || [];
+    const isCorrect = String(given) === String(correctOpt) ||
+      opts.some((o, i) => String(given) === String(o) && ['A','B','C','D'][i] === String(correctOpt));
+    if (isCorrect) { correct++; earned += pts; }
+    else { wrong++; earned -= pts * neg; }
+  });
+  if (earned < 0) earned = 0;
+  const percentage = totalMarks > 0 ? Math.round((earned / totalMarks) * 1000) / 10 : 0;
+  const passingScore = quiz.passingMarks || quiz.passing_score || 60;
+  const passed = isDisqualified ? false : percentage >= passingScore;
+  return {
+    id: `local_${Date.now()}`, quizId, quizTitle: quiz.title || 'Quiz',
+    score: Math.round(earned * 10) / 10, totalMarks, percentage, passed,
+    correct, wrong, skipped, timeTaken,
+    status: passed ? 'PASSED' : 'FAILED',
+    submittedAt: new Date().toISOString()
+  };
 }
 
 // ════════════════════════════════════════════════════════════

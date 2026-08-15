@@ -885,16 +885,25 @@ const API = {
     async getAllStudents() {
       const data = await API.request('/auth/users');
       let serverUsers = data.ok ? data.users : [];
-      const localUsers = LocalStore.get('users', []);
-      const customUsers = LocalSync.getCustomUsers();
+
+      // Filter: only students, no admins
+      serverUsers = serverUsers.filter(u => u.role !== 'admin');
+
+      const localUsers = LocalStore.get('users', []).filter(u => u.role !== 'admin');
+      const customUsers = LocalSync.getCustomUsers().filter(u => u.role !== 'admin');
       const deletedUserIds = LocalSync.getDeletedUserIds();
 
       const userMap = new Map();
-      serverUsers.forEach(u => userMap.set(String(u.id), u));
-      localUsers.forEach(u => { if (!userMap.has(String(u.id))) userMap.set(String(u.id), u); });
-      customUsers.forEach(u => userMap.set(String(u.id), { ...userMap.get(String(u.id)), ...u }));
+      serverUsers.forEach(u => userMap.set(String(u.id || u._id), u));
+      localUsers.forEach(u => { if (!userMap.has(String(u.id || u._id))) userMap.set(String(u.id || u._id), u); });
+      customUsers.forEach(u => {
+        const key = String(u.id || u._id);
+        userMap.set(key, { ...userMap.get(key), ...u });
+      });
 
-      return Array.from(userMap.values()).filter(u => !deletedUserIds.includes(String(u.id)));
+      return Array.from(userMap.values()).filter(u =>
+        !deletedUserIds.includes(String(u.id || u._id)) && u.role !== 'admin'
+      );
     },
 
     async createStudent(name, email, password) {
