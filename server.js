@@ -16,8 +16,39 @@ const DB_PATH = process.env.DB_PATH ||
     : path.join(__dirname, 'quizportal.db'));
 
 let db = null;
+let useMemDb = false;
+let memStore = {
+  users: [],
+  quizzes: [],
+  questions: [],
+  results: []
+};
+
+async function initMemStore() {
+  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+  const adminHashed = await bcrypt.hash(adminPass, 10);
+  const studentHashed = await bcrypt.hash('student123', 10);
+  const now = new Date().toISOString();
+
+  memStore = {
+    users: [
+      { id: 'admin001', name: 'Portal Admin', email: 'admin@quiz.com', password: adminHashed, rawPassword: adminPass, role: 'admin', createdAt: now },
+      { id: 'student001', name: 'Ali Student', email: 'ali@student.com', password: studentHashed, rawPassword: 'student123', role: 'student', createdAt: now }
+    ],
+    quizzes: [
+      { id: 'quiz001', title: 'JavaScript & Web Security Fundamentals', subject: 'Web Development', category: 'Web Development', durationMinutes: 10, passingMarks: 60, negativeMarks: 0.25, maxAttempts: 0, randomize: 0, createdBy: 'admin001', emoji: '💻', description: 'Test core JS, Async, & Web Security concepts.', createdAt: now }
+    ],
+    questions: [
+      { id: 'q1', quizId: 'quiz001', type: 'mcq', questionText: 'What will be the output of typeof NaN in JavaScript?', options: JSON.stringify(['number', 'NaN', 'undefined', 'object']), correctOption: 'A', marks: 1, explanation: 'NaN is numeric type in JS.', code_snippet: null },
+      { id: 'q2', quizId: 'quiz001', type: 'mcq', questionText: 'Which HTTP header helps prevent Cross-Site Scripting (XSS)?', options: JSON.stringify(['Access-Control-Allow-Origin', 'Content-Security-Policy', 'X-Frame-Options', 'Strict-Transport-Security']), correctOption: 'B', marks: 1, explanation: 'Content-Security-Policy restricts script sources.', code_snippet: null },
+      { id: 'q3', quizId: 'quiz001', type: 'mcq', questionText: 'What is the result of 0.1 + 0.2 === 0.3 in JavaScript?', options: JSON.stringify(['true', 'false', 'TypeError', 'undefined']), correctOption: 'B', marks: 1, explanation: 'Floating point precision results in 0.30000000000000004.', code_snippet: 'console.log(0.1 + 0.2 === 0.3);' }
+    ],
+    results: []
+  };
+}
 
 function saveDatabase() {
+  if (useMemDb) return;
   if (!db) return;
   try {
     const data = db.export();
@@ -31,227 +62,180 @@ function genId(prefix) {
 }
 
 async function initDatabase() {
-  if (db) return db;
-
-  let wasmFile = null;
-  try {
-    const wasmDir = path.dirname(require.resolve('sql.js'));
-    wasmFile = path.join(wasmDir, 'sql-wasm.wasm');
-  } catch (e) {}
-
-  const SQL = await initSqlJs(
-    wasmFile && fs.existsSync(wasmFile)
-      ? { locateFile: () => wasmFile }
-      : {}
-  );
-
-  if (!fs.existsSync(DB_PATH)) {
-    const seedDbPath = path.join(__dirname, 'quizportal.db');
-    if (fs.existsSync(seedDbPath) && seedDbPath !== DB_PATH) {
-      try {
-        fs.copyFileSync(seedDbPath, DB_PATH);
-      } catch (e) {}
-    }
-  }
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  db.run('PRAGMA foreign_keys = ON;');
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      rawPassword TEXT,
-      role TEXT NOT NULL,
-      createdAt TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS quizzes (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      subject TEXT DEFAULT 'General',
-      category TEXT DEFAULT 'General',
-      durationMinutes INTEGER NOT NULL DEFAULT 15,
-      totalMarks REAL DEFAULT 0,
-      passingMarks REAL NOT NULL DEFAULT 60,
-      negativeMarks REAL DEFAULT 0,
-      maxAttempts INTEGER NOT NULL DEFAULT 1,
-      randomize INTEGER NOT NULL DEFAULT 0,
-      createdBy TEXT,
-      createdAt TEXT DEFAULT (datetime('now')),
-      emoji TEXT DEFAULT '📝',
-      description TEXT
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS questions (
-      id TEXT PRIMARY KEY,
-      quizId TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'mcq',
-      questionText TEXT NOT NULL,
-      options TEXT DEFAULT '[]',
-      correctOption TEXT NOT NULL,
-      marks REAL NOT NULL DEFAULT 1,
-      explanation TEXT,
-      code_snippet TEXT,
-      image_url TEXT
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS results (
-      id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      quizId TEXT NOT NULL,
-      quizTitle TEXT,
-      answers TEXT DEFAULT '{}',
-      score REAL NOT NULL DEFAULT 0,
-      totalMarks REAL NOT NULL DEFAULT 0,
-      percentage REAL NOT NULL DEFAULT 0,
-      passed INTEGER NOT NULL DEFAULT 0,
-      correct INTEGER NOT NULL DEFAULT 0,
-      wrong INTEGER NOT NULL DEFAULT 0,
-      skipped INTEGER NOT NULL DEFAULT 0,
-      submittedAt TEXT DEFAULT (datetime('now')),
-      timeTaken TEXT DEFAULT '00:00:00',
-      antiCheatStrikes INTEGER DEFAULT 0
-    );
-  `);
+  if (db || useMemDb) return db;
 
   try {
-    const certCols = db.exec("PRAGMA table_info(certificates)");
-    if (certCols.length && certCols[0].values) {
-      const idCol = certCols[0].values.find(c => c[1] === 'id');
-      if (idCol && String(idCol[2]).toUpperCase().includes('INT')) {
-        db.run("DROP TABLE certificates;");
+    let wasmBinary = null;
+    const possibleWasmPaths = [
+      path.join(path.dirname(require.resolve('sql.js')), 'sql-wasm.wasm'),
+      path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+      path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+      '/var/task/node_modules/sql.js/dist/sql-wasm.wasm'
+    ];
+
+    for (const p of possibleWasmPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          wasmBinary = fs.readFileSync(p);
+          break;
+        } catch (e) {}
       }
     }
-  } catch (e) {}
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS certificates (
-      id TEXT PRIMARY KEY,
-      certificate_code TEXT UNIQUE NOT NULL,
-      user_id TEXT NOT NULL,
-      quiz_id TEXT NOT NULL,
-      result_id TEXT NOT NULL,
-      issue_date TEXT DEFAULT (datetime('now'))
-    );
-  `);
+    const SQL = await initSqlJs(wasmBinary ? { wasmBinary } : {});
 
-  const addColumnSafe = (table, colDef) => {
-    try {
-      db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef};`);
-    } catch (e) {}
-  };
+    if (!fs.existsSync(DB_PATH)) {
+      const seedDbPath = path.join(__dirname, 'quizportal.db');
+      if (fs.existsSync(seedDbPath) && seedDbPath !== DB_PATH) {
+        try { fs.copyFileSync(seedDbPath, DB_PATH); } catch (e) {}
+      }
+    }
 
-  addColumnSafe('users', 'rawPassword TEXT');
-  addColumnSafe('users', 'createdAt TEXT DEFAULT (datetime(\'now\'))');
-  addColumnSafe('quizzes', 'subject TEXT DEFAULT \'General\'');
-  addColumnSafe('quizzes', 'totalMarks REAL DEFAULT 0');
-  addColumnSafe('quizzes', 'negativeMarks REAL DEFAULT 0');
-  addColumnSafe('quizzes', 'maxAttempts INTEGER NOT NULL DEFAULT 1');
-  addColumnSafe('quizzes', 'randomize INTEGER NOT NULL DEFAULT 0');
-  addColumnSafe('quizzes', 'emoji TEXT DEFAULT \'📝\'');
-  addColumnSafe('quizzes', 'description TEXT');
-  addColumnSafe('quizzes', 'createdAt TEXT DEFAULT (datetime(\'now\'))');
-  addColumnSafe('questions', 'type TEXT NOT NULL DEFAULT \'mcq\'');
-  addColumnSafe('questions', 'options TEXT DEFAULT \'[]\'');
-  addColumnSafe('questions', 'marks REAL NOT NULL DEFAULT 1');
-  addColumnSafe('questions', 'code_snippet TEXT');
-  addColumnSafe('questions', 'image_url TEXT');
-  addColumnSafe('results', 'quizTitle TEXT');
-  addColumnSafe('results', 'answers TEXT DEFAULT \'{}\'');
-  addColumnSafe('results', 'totalMarks REAL NOT NULL DEFAULT 0');
-  addColumnSafe('results', 'correct INTEGER NOT NULL DEFAULT 0');
-  addColumnSafe('results', 'wrong INTEGER NOT NULL DEFAULT 0');
-  addColumnSafe('results', 'skipped INTEGER NOT NULL DEFAULT 0');
-  addColumnSafe('results', 'timeTaken TEXT DEFAULT \'00:00:00\'');
-  addColumnSafe('results', 'antiCheatStrikes INTEGER DEFAULT 0');
+    if (fs.existsSync(DB_PATH)) {
+      const fileBuffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(fileBuffer);
+    } else {
+      db = new SQL.Database();
+    }
 
-  const usersStmt = db.prepare('SELECT COUNT(*) as count FROM users');
-  let userCount = 0;
-  if (usersStmt.step()) {
-    userCount = usersStmt.getAsObject().count;
+    db.run('PRAGMA foreign_keys = ON;');
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        rawPassword TEXT,
+        role TEXT NOT NULL,
+        createdAt TEXT DEFAULT (datetime('now'))
+      );
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS quizzes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        subject TEXT DEFAULT 'General',
+        category TEXT DEFAULT 'General',
+        durationMinutes INTEGER NOT NULL DEFAULT 15,
+        totalMarks REAL DEFAULT 0,
+        passingMarks REAL NOT NULL DEFAULT 60,
+        negativeMarks REAL DEFAULT 0,
+        maxAttempts INTEGER NOT NULL DEFAULT 1,
+        randomize INTEGER NOT NULL DEFAULT 0,
+        createdBy TEXT,
+        createdAt TEXT DEFAULT (datetime('now')),
+        emoji TEXT DEFAULT '📝',
+        description TEXT
+      );
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS questions (
+        id TEXT PRIMARY KEY,
+        quizId TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'mcq',
+        questionText TEXT NOT NULL,
+        options TEXT DEFAULT '[]',
+        correctOption TEXT NOT NULL,
+        marks REAL NOT NULL DEFAULT 1,
+        explanation TEXT,
+        code_snippet TEXT,
+        image_url TEXT
+      );
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS results (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        quizId TEXT NOT NULL,
+        quizTitle TEXT,
+        answers TEXT DEFAULT '{}',
+        score REAL NOT NULL DEFAULT 0,
+        totalMarks REAL NOT NULL DEFAULT 0,
+        percentage REAL NOT NULL DEFAULT 0,
+        passed INTEGER NOT NULL DEFAULT 0,
+        correct INTEGER NOT NULL DEFAULT 0,
+        wrong INTEGER NOT NULL DEFAULT 0,
+        skipped INTEGER NOT NULL DEFAULT 0,
+        submittedAt TEXT DEFAULT (datetime('now')),
+        timeTaken TEXT DEFAULT '00:00:00',
+        antiCheatStrikes INTEGER DEFAULT 0
+      );
+    `);
+
+    const addColumnSafe = (table, colDef) => {
+      try { db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef};`); } catch (e) {}
+    };
+
+    addColumnSafe('users', 'rawPassword TEXT');
+    addColumnSafe('users', 'createdAt TEXT DEFAULT (datetime(\'now\'))');
+    addColumnSafe('quizzes', 'subject TEXT DEFAULT \'General\'');
+    addColumnSafe('quizzes', 'totalMarks REAL DEFAULT 0');
+    addColumnSafe('quizzes', 'negativeMarks REAL DEFAULT 0');
+    addColumnSafe('quizzes', 'maxAttempts INTEGER NOT NULL DEFAULT 1');
+    addColumnSafe('quizzes', 'randomize INTEGER NOT NULL DEFAULT 0');
+    addColumnSafe('quizzes', 'emoji TEXT DEFAULT \'📝\'');
+    addColumnSafe('quizzes', 'description TEXT');
+
+    const usersStmt = db.prepare('SELECT COUNT(*) as count FROM users');
+    let userCount = 0;
+    if (usersStmt.step()) {
+      userCount = usersStmt.getAsObject().count;
+    }
+    usersStmt.free();
+
+    if (userCount === 0) {
+      const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+      const adminHashed = await bcrypt.hash(adminPass, 10);
+      const studentHashed = await bcrypt.hash('student123', 10);
+      const adminId = genId('user');
+      const studentId = genId('user');
+
+      db.run('INSERT INTO users (id, name, email, password, rawPassword, role) VALUES (?, ?, ?, ?, ?, ?)', [
+        adminId, 'Portal Admin', 'admin@quiz.com', adminHashed, adminPass, 'admin'
+      ]);
+
+      db.run('INSERT INTO users (id, name, email, password, rawPassword, role) VALUES (?, ?, ?, ?, ?, ?)', [
+        studentId, 'Ali Student', 'ali@student.com', studentHashed, 'student123', 'student'
+      ]);
+
+      const quizId = genId('quiz');
+      db.run(`
+        INSERT INTO quizzes (id, title, subject, category, durationMinutes, passingMarks, negativeMarks, maxAttempts, randomize, createdBy, emoji, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [quizId, 'JavaScript & Web Security Fundamentals', 'Web Development', 'Web Development', 10, 60, 0.25, 1, 0, adminId, '💻', 'Test your core JavaScript, Async, and Web Security concepts.']);
+
+      const q1Id = genId('q');
+      db.run(`
+        INSERT INTO questions (id, quizId, type, questionText, options, correctOption, marks, explanation)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [q1Id, quizId, 'mcq', 'What will be the output of typeof NaN in JavaScript?', JSON.stringify(['number', 'NaN', 'undefined', 'object']), 'A', 1, 'In JavaScript, NaN is numeric type.']);
+
+      const q2Id = genId('q');
+      db.run(`
+        INSERT INTO questions (id, quizId, type, questionText, options, correctOption, marks, explanation)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [q2Id, quizId, 'mcq', 'Which HTTP header helps prevent Cross-Site Scripting (XSS)?', JSON.stringify(['Access-Control-Allow-Origin', 'Content-Security-Policy', 'X-Frame-Options', 'Strict-Transport-Security']), 'B', 1, 'Content-Security-Policy restricts script sources.']);
+
+      saveDatabase();
+    }
+
+    return db;
+  } catch (err) {
+    console.warn('[WASM Init Failed - Using Pure JS Fallback Engine]', err.message);
+    useMemDb = true;
+    await initMemStore();
+    return null;
   }
-  usersStmt.free();
-
-  if (userCount === 0) {
-    const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
-    const adminHashed = await bcrypt.hash(adminPass, 10);
-    const studentHashed = await bcrypt.hash('student123', 10);
-    const adminId = genId('user');
-    const studentId = genId('user');
-
-    db.run('INSERT INTO users (id, name, email, password, rawPassword, role) VALUES (?, ?, ?, ?, ?, ?)', [
-      adminId, 'Portal Admin', 'admin@quiz.com', adminHashed, adminPass, 'admin'
-    ]);
-
-    db.run('INSERT INTO users (id, name, email, password, rawPassword, role) VALUES (?, ?, ?, ?, ?, ?)', [
-      studentId, 'Ali Student', 'ali@student.com', studentHashed, 'student123', 'student'
-    ]);
-
-    const quizId = genId('quiz');
-    db.run(`
-      INSERT INTO quizzes (id, title, subject, category, durationMinutes, passingMarks, negativeMarks, maxAttempts, randomize, createdBy, emoji, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [quizId, 'JavaScript & Web Security Fundamentals', 'Web Development', 'Web Development', 10, 60, 0.25, 1, 0, adminId, '💻', 'Test your core JavaScript, Async, and Web Security concepts.']);
-
-    const q1Id = genId('q');
-    db.run(`
-      INSERT INTO questions (id, quizId, type, questionText, options, correctOption, marks, explanation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      q1Id, quizId, 'mcq',
-      'What will be the output of the following JavaScript code?\nconsole.log(typeof NaN);',
-      JSON.stringify(['number', 'NaN', 'undefined', 'object']),
-      'A', 1,
-      'In JavaScript, NaN (Not-a-Number) is technically a numeric type, so typeof NaN returns "number".'
-    ]);
-
-    const q2Id = genId('q');
-    db.run(`
-      INSERT INTO questions (id, quizId, type, questionText, options, correctOption, marks, explanation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      q2Id, quizId, 'mcq',
-      'Which HTTP header helps prevent Cross-Site Scripting (XSS) attacks by controlling allowed resources?',
-      JSON.stringify(['Access-Control-Allow-Origin', 'Content-Security-Policy', 'X-Frame-Options', 'Strict-Transport-Security']),
-      'B', 1,
-      'Content-Security-Policy (CSP) restricts sources from which resources (scripts, styles, images) can be loaded.'
-    ]);
-
-    const q3Id = genId('q');
-    db.run(`
-      INSERT INTO questions (id, quizId, type, questionText, code_snippet, options, correctOption, marks, explanation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      q3Id, quizId, 'mcq',
-      'What is the result of 0.1 + 0.2 === 0.3 in JavaScript?',
-      'console.log(0.1 + 0.2 === 0.3);',
-      JSON.stringify(['true', 'false', 'TypeError', 'undefined']),
-      'B', 1,
-      'Due to IEEE 754 floating-point arithmetic representation, 0.1 + 0.2 equals 0.30000000000000004.'
-    ]);
-
-    saveDatabase();
-  }
-
-  return db;
 }
 
 function queryAll(sql, params = []) {
+  if (useMemDb) {
+    return queryAllMem(sql, params);
+  }
   const stmt = db.prepare(sql);
   stmt.bind(params);
   const rows = [];
@@ -268,11 +252,182 @@ function queryOne(sql, params = []) {
 }
 
 function runSql(sql, params = []) {
+  if (useMemDb) {
+    return runSqlMem(sql, params);
+  }
   db.run(sql, params);
   saveDatabase();
   const lastId = queryOne('SELECT last_insert_rowid() as id');
   const changes = queryOne('SELECT changes() as count');
   return { lastInsertRowid: lastId ? lastId.id : 0, changes: changes ? changes.count : 0 };
+}
+
+// ── Pure JS Memory Store Query Evaluator ──
+function queryAllMem(sql, params = []) {
+  const cleanSql = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  if (cleanSql.includes('from users')) {
+    let list = [...memStore.users];
+    if (cleanSql.includes('lower(email) = lower(?)')) {
+      const email = String(params[0] || '').trim().toLowerCase();
+      list = list.filter(u => u.email.toLowerCase() === email);
+    } else if (cleanSql.includes('where id = ?')) {
+      list = list.filter(u => u.id === params[0]);
+    }
+    return list.map(u => ({
+      ...u,
+      quizzesAttempted: memStore.results.filter(r => r.userId === u.id).length
+    }));
+  }
+
+  if (cleanSql.includes('from quizzes')) {
+    let list = [...memStore.quizzes];
+    if (cleanSql.includes('where id = ?')) {
+      list = list.filter(q => q.id === params[0]);
+    }
+    const userId = params[params.length - 1];
+    return list.map(q => ({
+      ...q,
+      creatorName: 'Portal Admin',
+      questionCount: memStore.questions.filter(qs => qs.quizId === q.id).length,
+      computedTotalMarks: memStore.questions.filter(qs => qs.quizId === q.id).reduce((sum, item) => sum + (Number(item.marks) || 1), 0),
+      myAttempts: memStore.results.filter(r => r.quizId === q.id && r.userId === userId).length
+    }));
+  }
+
+  if (cleanSql.includes('from questions')) {
+    let list = [...memStore.questions];
+    if (cleanSql.includes('where quizid = ?')) {
+      list = list.filter(q => q.quizId === params[0]);
+    } else if (cleanSql.includes('where id = ?')) {
+      list = list.filter(q => q.id === params[0]);
+    }
+    return list.map(q => {
+      const quiz = memStore.quizzes.find(qz => qz.id === q.quizId);
+      return { ...q, quiz_title: quiz ? quiz.title : 'Quiz' };
+    });
+  }
+
+  if (cleanSql.includes('from results')) {
+    let list = [...memStore.results];
+    if (cleanSql.includes('where r.userid = ?') || cleanSql.includes('where userid = ?')) {
+      list = list.filter(r => r.userId === params[0]);
+    } else if (cleanSql.includes('where r.quizid = ?') || cleanSql.includes('where quizid = ?')) {
+      list = list.filter(r => r.quizId === params[0]);
+    } else if (cleanSql.includes('where r.id = ?') || cleanSql.includes('where id = ?')) {
+      list = list.filter(r => r.id === params[0]);
+    }
+    return list.map(r => {
+      const user = memStore.users.find(u => u.id === r.userId);
+      const quiz = memStore.quizzes.find(qz => qz.id === r.quizId);
+      return {
+        ...r,
+        student_name: user ? user.name : 'Student',
+        student_email: user ? user.email : '',
+        quiz_title: quiz ? quiz.title : (r.quizTitle || 'Quiz')
+      };
+    });
+  }
+
+  return [];
+}
+
+function runSqlMem(sql, params = []) {
+  const cleanSql = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  if (cleanSql.startsWith('insert into users')) {
+    const newUser = {
+      id: params[0],
+      name: params[1],
+      email: params[2],
+      password: params[3],
+      rawPassword: params[4],
+      role: params[5],
+      createdAt: params[6] || new Date().toISOString()
+    };
+    memStore.users.push(newUser);
+    return { lastInsertRowid: 1, changes: 1 };
+  }
+
+  if (cleanSql.startsWith('insert into quizzes')) {
+    const newQuiz = {
+      id: params[0],
+      title: params[1],
+      subject: params[2],
+      category: params[3],
+      durationMinutes: params[4],
+      totalMarks: params[5],
+      passingMarks: params[6],
+      negativeMarks: params[7],
+      maxAttempts: params[8],
+      randomize: params[9],
+      createdBy: params[10],
+      createdAt: params[11] || new Date().toISOString(),
+      emoji: params[12] || '📝',
+      description: params[13] || ''
+    };
+    memStore.quizzes.push(newQuiz);
+    return { lastInsertRowid: 1, changes: 1 };
+  }
+
+  if (cleanSql.startsWith('insert into questions')) {
+    const newQ = {
+      id: params[0],
+      quizId: params[1],
+      type: params[2],
+      questionText: params[3],
+      options: params[4],
+      correctOption: params[5],
+      marks: params[6],
+      explanation: params[7],
+      code_snippet: params[8]
+    };
+    memStore.questions.push(newQ);
+    return { lastInsertRowid: 1, changes: 1 };
+  }
+
+  if (cleanSql.startsWith('insert into results')) {
+    const newRes = {
+      id: params[0],
+      userId: params[1],
+      quizId: params[2],
+      quizTitle: params[3],
+      answers: params[4],
+      score: params[5],
+      totalMarks: params[6],
+      percentage: params[7],
+      passed: params[8],
+      correct: params[9],
+      wrong: params[10],
+      skipped: params[11],
+      submittedAt: new Date().toISOString(),
+      timeTaken: params[13] || '00:00'
+    };
+    memStore.results.push(newRes);
+    return { lastInsertRowid: 1, changes: 1 };
+  }
+
+  if (cleanSql.startsWith('update users')) {
+    const idx = memStore.users.findIndex(u => u.id === params[2]);
+    if (idx >= 0) {
+      memStore.users[idx].password = params[0];
+      memStore.users[idx].rawPassword = params[1];
+      return { lastInsertRowid: 0, changes: 1 };
+    }
+  }
+
+  if (cleanSql.startsWith('delete from quizzes')) {
+    const initialLen = memStore.quizzes.length;
+    memStore.quizzes = memStore.quizzes.filter(q => q.id !== params[0]);
+    return { lastInsertRowid: 0, changes: initialLen - memStore.quizzes.length };
+  }
+
+  if (cleanSql.startsWith('delete from questions')) {
+    memStore.questions = memStore.questions.filter(q => q.id !== params[0] && q.quizId !== params[0]);
+    return { lastInsertRowid: 0, changes: 1 };
+  }
+
+  return { lastInsertRowid: 0, changes: 0 };
 }
 
 function verifyToken(req, res, next) {
@@ -319,19 +474,6 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
-}
-
-function letterToIndex(letter) {
-  const map = { a: 0, b: 1, c: 2, d: 3 };
-  return map[String(letter).trim().toLowerCase()];
-}
-
-function timeStrToSec(t) {
-  if (!t || typeof t !== 'string') return 0;
-  const parts = t.split(':').map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return 0;
 }
 
 const app = express();
@@ -498,7 +640,7 @@ app.post('/api/quizzes', verifyToken, requireRole('admin'), (req, res) => {
   const { title, subject, category, durationMinutes, passingMarks, negativeMarks, maxAttempts, randomize, emoji, description } = req.body;
   if (!title) return res.status(400).json({ ok: false, msg: 'Quiz title required.' });
   const quizId = genId('quiz');
-  runSql(`INSERT INTO quizzes (id, title, subject, category, durationMinutes, passingMarks, negativeMarks, maxAttempts, randomize, createdBy, createdAt, emoji, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`, [
+  runSql(`INSERT INTO quizzes (id, title, subject, category, durationMinutes, passingMarks, negativeMarks, maxAttempts, randomize, createdBy, emoji, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`, [
     quizId, title.trim(), category || subject || 'General', category || subject || 'General', parseInt(durationMinutes) || 15, parseFloat(passingMarks) || 60, parseFloat(negativeMarks) || 0, parseInt(maxAttempts) || 0, randomize ? 1 : 0, req.user.id, emoji || '📝', description || ''
   ]);
   res.json({ ok: true, msg: 'Quiz created!', quizId, id: quizId });
