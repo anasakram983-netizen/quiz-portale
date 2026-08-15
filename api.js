@@ -488,13 +488,13 @@ const API = {
       const passed = percentage >= passingScore;
 
       const newResult = {
-        id: Date.now(),
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        quizId: quizId,
+        id: `res_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+        userId: user.id || user._id || 'user_active',
+        userName: user.name || 'Student',
+        userEmail: String(user.email || '').toLowerCase().trim(),
+        quizId: rawQuizId,
         quizTitle: quiz ? quiz.title : 'Quiz Assessment',
-        score: Math.round(earned),
+        score: Math.round(earned * 10) / 10,
         totalMarks,
         total_questions: qList.length,
         percentage,
@@ -802,7 +802,22 @@ const API = {
     },
 
     async getAnalyticsOverview() {
-      return await API.request('/results/analytics/overview');
+      const data = await API.request('/results/analytics/overview');
+      const allResults = await API.Results.getAllResults();
+      const allQuizzes = await API.Quiz.getAll();
+      const allStudents = await API.Admin.getAllStudents();
+
+      const totalAttempts = Math.max(data.ok ? (data.totalAttempts || 0) : 0, allResults.length);
+      const passedCount = allResults.filter(r => r.passed || r.status === 'PASSED').length;
+      const passRate = totalAttempts > 0 ? Math.round((passedCount / totalAttempts) * 100) : (data.passRate || 0);
+
+      return {
+        ok: true,
+        totalStudents: Math.max(data.ok ? (data.totalStudents || 0) : 0, allStudents.length),
+        totalQuizzes: Math.max(data.ok ? (data.totalQuizzes || 0) : 0, allQuizzes.length),
+        totalAttempts: totalAttempts,
+        passRate: passRate
+      };
     },
   },
 

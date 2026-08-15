@@ -960,8 +960,10 @@ async function submitQuiz(isDisqualified = false) {
 
     playChime(finalResult.passed ? 'success' : 'fail');
     if (finalResult.passed) setTimeout(() => burstConfetti(2800), 200);
+    LocalSync.addCustomResult(finalResult);
     renderResult(finalResult, detailedQuestions);
     await showPanel('panel-results');
+    await renderCatalog().catch(() => {});
 
   } catch (err) {
     console.error('[Quiz Submission Error]', err);
@@ -1032,7 +1034,8 @@ function renderResult(result, questions) {
 
   // Build per-question DETAILED answer review — correct ans + explanation
   let reviewHtml = '';
-  if (questions && questions.length > 0 && answers) {
+  const userAnsObj = answers || result.answers || quizState.answersByQId || quizState.answers || {};
+  if (questions && questions.length > 0) {
     reviewHtml = `
     <div class="glass-card" style="margin-top:24px;padding:28px 24px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
@@ -1045,23 +1048,34 @@ function renderResult(result, questions) {
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;">
         ${questions.map((q, idx) => {
-          const qid = q.id;
+          const qid = String(q.id || idx);
           // Look up student answer by id OR index (for compatibility)
-          let givenAns = answers[qid];
-          if (givenAns === undefined) givenAns = answers[idx];
+          let givenAns = userAnsObj[qid];
+          if (givenAns === undefined) givenAns = userAnsObj[idx];
           if (givenAns === undefined) givenAns = null;
 
-          const correctAns = q.correctAnswer !== undefined ? q.correctAnswer : null;
+          const correctOptLetter = q.correctOption || q.correct_option || q.correctAnswer;
+          let correctAns = q.correctAnswer;
+          if (!correctAns && q.options && q.options.length) {
+            if (correctOptLetter === 'A') correctAns = q.options[0];
+            else if (correctOptLetter === 'B') correctAns = q.options[1];
+            else if (correctOptLetter === 'C') correctAns = q.options[2];
+            else if (correctOptLetter === 'D') correctAns = q.options[3];
+            else correctAns = correctOptLetter;
+          }
+          if (!correctAns) correctAns = correctOptLetter;
 
-          // Compute correctness (matches server's grading logic)
+          // Compute correctness
           let isCorrect = false;
-          const isSkipped = !givenAns || givenAns === '';
+          const isSkipped = givenAns === null || givenAns === undefined || String(givenAns).trim() === '';
 
           if (!isSkipped && correctAns !== null) {
             if (q.type === 'fillblank') {
               isCorrect = String(givenAns).trim().toLowerCase() === String(correctAns).trim().toLowerCase();
             } else {
-              isCorrect = String(givenAns) === String(correctAns);
+              isCorrect = String(givenAns) === String(correctAns) ||
+                String(givenAns).toUpperCase() === String(correctOptLetter).toUpperCase() ||
+                (q.options && q.options.some((opt, i) => String(givenAns) === String(opt) && ['A','B','C','D'][i] === String(correctOptLetter)));
             }
           }
 
