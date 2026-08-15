@@ -66,6 +66,11 @@
         <span class="nav-item-icon">🏆</span>
         Results &amp; Leaderboard
       </div>
+
+      <div class="nav-item" data-panel="panel-settings">
+        <span class="nav-item-icon">⚙️</span>
+        Profile &amp; Settings
+      </div>
     </nav>
 
     <!-- Footer -->
@@ -436,6 +441,69 @@
         </div>
       </div><!-- /panel-results -->
 
+      <!-- ══════════════════════════════════
+           PANEL: ADMIN PROFILE & SETTINGS
+      ══════════════════════════════════ -->
+      <div class="panel" id="panel-settings">
+        <div class="section-header" style="margin-bottom:24px;">
+          <div>
+            <h3>⚙️ Admin Profile &amp; Settings</h3>
+            <p>Update your Admin name, email, and password</p>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:24px;">
+
+          <!-- Account Profile Info -->
+          <div class="glass-card" style="padding:28px 24px;">
+            <div style="display:flex; align-items:center; gap:16px; margin-bottom:24px;">
+              <div id="admin-settings-avatar" style="width:64px; height:64px; border-radius:50%; background:var(--grad-primary); color:#fff; font-size:1.6rem; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-accent); flex-shrink:0;">A</div>
+              <div>
+                <div id="admin-settings-display-name" style="font-family:var(--font-head); font-size:1.25rem; font-weight:700; color:var(--text-primary);">Portal Admin</div>
+                <div id="admin-settings-display-email" style="color:var(--text-secondary); font-size:0.9rem;">admin@quiz.com</div>
+                <span class="badge badge-purple" style="margin-top:6px;">🛡️ Administrator</span>
+              </div>
+            </div>
+
+            <h4 style="font-size:1rem; margin-bottom:14px;">👤 Edit Profile Info</h4>
+            <form id="admin-profile-form" novalidate>
+              <div class="form-group" style="margin-bottom:14px;">
+                <label class="form-label" for="admin-set-name">Admin Name *</label>
+                <input type="text" id="admin-set-name" class="form-input" placeholder="Portal Admin" required />
+              </div>
+              <div class="form-group" style="margin-bottom:20px;">
+                <label class="form-label" for="admin-set-email">Admin Email *</label>
+                <input type="email" id="admin-set-email" class="form-input" placeholder="admin@quiz.com" required />
+              </div>
+              <button type="submit" class="btn btn-primary" style="width:100%;">💾 Save Profile Changes</button>
+            </form>
+          </div>
+
+          <!-- Change Admin Password Card -->
+          <div class="glass-card" style="padding:28px 24px;">
+            <h3 style="font-size:1.05rem; margin-bottom:6px;">🔑 Change Admin Password</h3>
+            <p style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:20px;">Update your password to keep the portal secure.</p>
+            
+            <form id="admin-password-form" novalidate>
+              <div class="form-group" style="margin-bottom:14px;">
+                <label class="form-label" for="admin-pwd-current">Current Password *</label>
+                <input type="password" id="admin-pwd-current" class="form-input" placeholder="Enter current password" required />
+              </div>
+              <div class="form-group" style="margin-bottom:14px;">
+                <label class="form-label" for="admin-pwd-new">New Password *</label>
+                <input type="password" id="admin-pwd-new" class="form-input" placeholder="At least 4 characters" minlength="4" required />
+              </div>
+              <div class="form-group" style="margin-bottom:20px;">
+                <label class="form-label" for="admin-pwd-confirm">Confirm New Password *</label>
+                <input type="password" id="admin-pwd-confirm" class="form-input" placeholder="Retype new password" minlength="4" required />
+              </div>
+              <button type="submit" class="btn btn-primary" style="width:100%;">✅ Update Admin Password</button>
+            </form>
+          </div>
+
+        </div>
+      </div><!-- /panel-settings -->
+
     </div><!-- /page-content -->
   </div><!-- /main-content -->
 </div><!-- /admin-layout -->
@@ -633,6 +701,43 @@
       <div style="display: flex; gap: 12px; justify-content: flex-end;">
         <button type="button" class="btn btn-secondary" id="add-student-cancel-btn">Cancel</button>
         <button type="submit" class="btn btn-primary">🎉 Create Student Account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     EDIT STUDENT ACCOUNT MODAL
+════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="edit-student-modal" role="dialog" aria-modal="true">
+  <div class="modal-box" style="max-width: 480px;">
+    <div class="modal-header">
+      <h2 class="modal-title">✏️ Edit Student Account</h2>
+      <button class="modal-close" id="edit-stud-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div style="margin-bottom: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+      Update student full name, email address, or password.
+    </div>
+
+    <form id="edit-student-form" novalidate>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" for="edit-stud-name">Full Name *</label>
+        <input type="text" id="edit-stud-name" class="form-input" placeholder="e.g. Usama Khan" required />
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" for="edit-stud-email">Email Address *</label>
+        <input type="email" id="edit-stud-email" class="form-input" placeholder="student@example.com" required />
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="edit-stud-password">Password *</label>
+        <input type="text" id="edit-stud-password" class="form-input" placeholder="Enter password (min 4 chars)" minlength="4" required />
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="edit-stud-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">💾 Save Student Changes</button>
       </div>
     </form>
   </div>

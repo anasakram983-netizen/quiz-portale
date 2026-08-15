@@ -26,6 +26,8 @@ let currentPwdStudentId = null;
   setupAdminMobileMenu();
   setupPasswordModal();
   setupAddStudentModal();
+  setupEditStudentModal();
+  setupAdminProfileAndPasswordForms();
   setupStudentsSearch();
   await renderDashboard();
   await renderCategoryTabs();
@@ -132,6 +134,7 @@ const panelMeta = {
   'panel-builder':   { title: 'Quiz Builder',         sub: 'Create & manage quizzes' },
   'panel-bank':      { title: 'Question Bank',        sub: 'Manage questions & bulk import' },
   'panel-results':   { title: 'Results & Leaderboard', sub: 'View student performance' },
+  'panel-settings':  { title: 'Profile & Settings',    sub: 'Manage Admin profile, credentials & password' },
 };
 
 async function showPanel(panelId) {
@@ -152,6 +155,7 @@ async function showPanel(panelId) {
   if (panelId === 'panel-builder')   { await renderCategoryTabs(); await renderQuizCards(); }
   if (panelId === 'panel-bank')      await renderQuestionBank();
   if (panelId === 'panel-results')   await renderResults();
+  if (panelId === 'panel-settings')  await renderAdminSettingsPanel();
 }
 
 navItems.forEach(item => {
@@ -976,10 +980,22 @@ async function renderStudents(filterText = '') {
       <td style="font-weight:600;color:${attempts > 0 ? 'var(--success)' : 'var(--text-muted)'};">${attempts} quiz${attempts !== 1 ? 'zes' : ''}</td>
       <td style="font-size:0.75rem;color:var(--text-muted);">${date}</td>
       <td>
-        <button class="btn btn-sm btn-secondary" onclick="openChangePassword('${u.id}', '${u.name.replace(/'/g, "\\'")}', '${u.email.replace(/'/g, "\\'")}')" style="padding:6px 10px;">🔑 Change Password</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-sm btn-secondary" onclick="openEditStudent('${u.id}', '${u.name.replace(/'/g, "\\'")}', '${u.email.replace(/'/g, "\\'")}', '${pwd.replace(/'/g, "\\'")}')" style="padding:6px 10px;">✏️ Edit</button>
+          <button class="btn btn-sm btn-secondary" onclick="openChangePassword('${u.id}', '${u.name.replace(/'/g, "\\'")}', '${u.email.replace(/'/g, "\\'")}')" style="padding:6px 10px;">🔑 Password</button>
+          ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteStudent('${u.id}', '${u.name.replace(/'/g, "\\'")}')" style="padding:6px 10px;">🗑️ Delete</button>` : ''}
+        </div>
       </td>
     </tr>`;
   }).join('');
+}
+
+async function deleteStudent(id, name) {
+  if (!confirm(`Are you sure you want to delete student account "${name}" and all their test records?`)) return;
+  const res = await API.Admin.deleteStudent(id);
+  if (!res.ok) return toast(res.msg || 'Failed to delete student.', 'error');
+  toast('Student account deleted.', 'warning');
+  await renderStudents(document.getElementById('students-search')?.value || '');
 }
 
 // Helper to copy text to clipboard
@@ -1099,5 +1115,117 @@ function setupAddStudentModal() {
     toast(`Student account created for ${name}! 🎉`, 'success');
     close();
     await renderStudents(document.getElementById('students-search')?.value || '');
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// EDIT STUDENT DETAILS MODAL
+// ════════════════════════════════════════════════════════════
+let currentEditStudentId = null;
+
+function setupEditStudentModal() {
+  document.getElementById('edit-stud-modal-close')?.addEventListener('click', closeEditStudent);
+  document.getElementById('edit-stud-cancel-btn')?.addEventListener('click', closeEditStudent);
+  document.getElementById('edit-student-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeEditStudent();
+  });
+
+  document.getElementById('edit-student-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentEditStudentId) return;
+
+    const name = document.getElementById('edit-stud-name').value.trim();
+    const email = document.getElementById('edit-stud-email').value.trim();
+    const password = document.getElementById('edit-stud-password').value.trim();
+
+    if (!name || !email || !password) return toast('All fields are required.', 'warning');
+    if (password.length < 4) return toast('Password must be at least 4 characters.', 'error');
+
+    const res = await API.Admin.updateStudent(currentEditStudentId, { name, email, password });
+    if (!res.ok) return toast(res.msg || 'Failed to update student.', 'error');
+
+    toast('Student details updated successfully! 💾', 'success');
+    closeEditStudent();
+    await renderStudents(document.getElementById('students-search')?.value || '');
+  });
+}
+
+function openEditStudent(userId, name, email, password) {
+  currentEditStudentId = userId;
+  document.getElementById('edit-stud-name').value = name;
+  document.getElementById('edit-stud-email').value = email;
+  document.getElementById('edit-stud-password').value = password || '';
+  document.getElementById('edit-student-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('edit-stud-name')?.focus(), 100);
+}
+
+function closeEditStudent() {
+  currentEditStudentId = null;
+  document.getElementById('edit-student-modal').classList.add('hidden');
+}
+
+// ════════════════════════════════════════════════════════════
+// ADMIN PROFILE & PASSWORD SETTINGS
+// ════════════════════════════════════════════════════════════
+async function renderAdminSettingsPanel() {
+  const me = await API.Auth.getMe();
+  const session = adminSession || me;
+  if (!session) return;
+
+  const nameInput = document.getElementById('admin-set-name');
+  const emailInput = document.getElementById('admin-set-email');
+  const avatarEl = document.getElementById('admin-settings-avatar');
+  const dispName = document.getElementById('admin-settings-display-name');
+  const dispEmail = document.getElementById('admin-settings-display-email');
+
+  if (nameInput) nameInput.value = session.name || 'Portal Admin';
+  if (emailInput) emailInput.value = session.email || 'admin@quiz.com';
+  if (avatarEl) avatarEl.textContent = (session.name || 'Admin').charAt(0).toUpperCase();
+  if (dispName) dispName.textContent = session.name || 'Portal Admin';
+  if (dispEmail) dispEmail.textContent = session.email || 'admin@quiz.com';
+}
+
+function setupAdminProfileAndPasswordForms() {
+  // Profile update form
+  document.getElementById('admin-profile-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('admin-set-name').value.trim();
+    const email = document.getElementById('admin-set-email').value.trim();
+
+    if (!name || !email) return toast('Name and email are required.', 'warning');
+
+    const res = await API.Auth.updateProfile(name, email);
+    if (res.ok) {
+      toast(res.msg || 'Admin profile updated!', 'success');
+      const adminNameEl = document.getElementById('admin-name');
+      const adminAvEl = document.getElementById('admin-avatar');
+      if (adminNameEl) adminNameEl.textContent = name;
+      if (adminAvEl) adminAvEl.textContent = name.charAt(0).toUpperCase();
+      if (adminSession) { adminSession.name = name; adminSession.email = email; }
+      await renderAdminSettingsPanel();
+    } else {
+      toast(res.msg || 'Update failed.', 'error');
+    }
+  });
+
+  // Admin Password form
+  document.getElementById('admin-password-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cur = document.getElementById('admin-pwd-current').value.trim();
+    const nw  = document.getElementById('admin-pwd-new').value.trim();
+    const cn  = document.getElementById('admin-pwd-confirm').value.trim();
+
+    if (!cur || !nw || !cn) return toast('Please fill all password fields.', 'warning');
+    if (nw.length < 4) return toast('New password must be at least 4 characters.', 'warning');
+    if (nw !== cn) return toast('New passwords do not match.', 'error');
+    if (cur === nw) return toast('New password must be different.', 'warning');
+
+    const res = await API.Auth.changeMyPassword(cur, nw);
+    if (res.ok) {
+      toast(res.msg || 'Admin password updated successfully!', 'success');
+      e.target.reset();
+    } else {
+      toast(res.msg || 'Password update failed.', 'error');
+    }
   });
 }

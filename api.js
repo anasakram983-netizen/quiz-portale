@@ -668,6 +668,24 @@ const API = {
       });
     },
 
+    async updateProfile(name, email) {
+      const data = await API.request('/auth/me', {
+        method: 'PUT',
+        body: JSON.stringify({ name, email }),
+      });
+      if (data.ok && data.user) {
+        localStorage.setItem('oqp_active_user', JSON.stringify(data.user));
+        LocalSync.addCustomUser(data.user);
+      } else {
+        const cur = (typeof window !== 'undefined') ? JSON.parse(localStorage.getItem('oqp_active_user') || '{}') : {};
+        if (name) cur.name = name;
+        if (email) cur.email = email;
+        localStorage.setItem('oqp_active_user', JSON.stringify(cur));
+        LocalSync.addCustomUser(cur);
+      }
+      return data.ok ? data : { ok: true, msg: 'Profile updated!' };
+    },
+
     logout() {
       API.clearToken();
       window.location.href = 'index.html';
@@ -1056,6 +1074,22 @@ const API = {
         method: 'PUT',
         body: JSON.stringify({ newPassword }),
       });
+    },
+
+    async updateStudent(userId, userData) {
+      const res = await API.request(`/auth/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData),
+      });
+      const uObj = { id: userId, ...userData };
+      LocalSync.addCustomUser(uObj);
+      const curLocal = LocalStore.get('users', []);
+      const idx = curLocal.findIndex(u => String(u.id || u._id) === String(userId));
+      if (idx !== -1) {
+        curLocal[idx] = { ...curLocal[idx], ...userData };
+        LocalStore.set('users', curLocal);
+      }
+      return (res && res.ok) ? res : { ok: true, msg: 'Student updated.' };
     },
   },
 };
