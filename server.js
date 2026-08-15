@@ -498,6 +498,25 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/js', express.static(path.join(__dirname, 'js')));
 app.use('/css', express.static(path.join(__dirname, 'css')));
+
+app.get('/js/:file', (req, res) => {
+  const filePath = path.join(__dirname, 'js', req.params.file);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('JS File Not Found');
+});
+
+app.get('/css/:file', (req, res) => {
+  const filePath = path.join(__dirname, 'css', req.params.file);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('CSS File Not Found');
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // ── Auth Endpoints ──
