@@ -118,71 +118,7 @@ const LocalStore = {
       ]);
     }
     if (!localStorage.getItem('oqp_db_questions')) {
-      this.set('questions', [
-        {
-          id: 1,
-          quiz_id: 1,
-          quizId: 1,
-          question_text: 'What will be the output of the following JavaScript code?',
-          questionText: 'What will be the output of the following JavaScript code?',
-          code_snippet: 'console.log(typeof NaN);',
-          codeSnippet: 'console.log(typeof NaN);',
-          type: 'mcq',
-          options: ['number', 'NaN', 'undefined', 'object'],
-          option_a: 'number',
-          option_b: 'NaN',
-          option_c: 'undefined',
-          option_d: 'object',
-          correct_option: 'A',
-          correctOption: 'A',
-          correctAnswer: 'number',
-          explanation: 'In JavaScript, NaN (Not-a-Number) is technically a numeric type, so typeof NaN returns "number".',
-          points: 1,
-          marks: 1
-        },
-        {
-          id: 2,
-          quiz_id: 1,
-          quizId: 1,
-          question_text: 'Which HTTP header helps prevent Cross-Site Scripting (XSS) attacks by controlling allowed resources?',
-          questionText: 'Which HTTP header helps prevent Cross-Site Scripting (XSS) attacks by controlling allowed resources?',
-          code_snippet: null,
-          codeSnippet: null,
-          type: 'mcq',
-          options: ['Access-Control-Allow-Origin', 'Content-Security-Policy', 'X-Frame-Options', 'Strict-Transport-Security'],
-          option_a: 'Access-Control-Allow-Origin',
-          option_b: 'Content-Security-Policy',
-          option_c: 'X-Frame-Options',
-          option_d: 'Strict-Transport-Security',
-          correct_option: 'B',
-          correctOption: 'B',
-          correctAnswer: 'Content-Security-Policy',
-          explanation: 'Content-Security-Policy (CSP) restricts sources from which resources can be loaded.',
-          points: 1,
-          marks: 1
-        },
-        {
-          id: 3,
-          quiz_id: 1,
-          quizId: 1,
-          question_text: 'What is the result of 0.1 + 0.2 === 0.3 in JavaScript?',
-          questionText: 'What is the result of 0.1 + 0.2 === 0.3 in JavaScript?',
-          code_snippet: 'console.log(0.1 + 0.2 === 0.3);',
-          codeSnippet: 'console.log(0.1 + 0.2 === 0.3);',
-          type: 'mcq',
-          options: ['true', 'false', 'TypeError', 'undefined'],
-          option_a: 'true',
-          option_b: 'false',
-          option_c: 'TypeError',
-          option_d: 'undefined',
-          correct_option: 'B',
-          correctOption: 'B',
-          correctAnswer: 'false',
-          explanation: 'Due to IEEE 754 floating-point arithmetic representation, 0.1 + 0.2 equals 0.30000000000000004.',
-          points: 1,
-          marks: 1
-        }
-      ]);
+      this.set('questions', []);
     }
     if (!localStorage.getItem('oqp_db_results')) {
       this.set('results', []);
@@ -191,6 +127,34 @@ const LocalStore = {
 };
 
 LocalStore.initSeed();
+
+// ── One-time cleanup: remove stale demo seed questions from old versions ──
+(function cleanupStaleData() {
+  try {
+    const ver = localStorage.getItem('oqp_data_version');
+    if (ver !== '2') {
+      // Clear old questions that were auto-seeded (ids 1,2,3 belonged to demo quiz)
+      const qs = LocalStore.get('questions', []);
+      const cleaned = qs.filter(q => {
+        const id = String(q.id);
+        return id !== '1' && id !== '2' && id !== '3';
+      });
+      LocalStore.set('questions', cleaned);
+
+      // Also clean LocalSync custom questions of stale demo ids
+      try {
+        const cq = JSON.parse(localStorage.getItem('oqp_custom_questions') || '[]');
+        const cleanedCq = cq.filter(q => {
+          const id = String(q.id);
+          return id !== '1' && id !== '2' && id !== '3';
+        });
+        localStorage.setItem('oqp_custom_questions', JSON.stringify(cleanedCq));
+      } catch(e) {}
+
+      localStorage.setItem('oqp_data_version', '2');
+    }
+  } catch(e) {}
+})();
 
 const API = {
   // ── Token Storage ─────────────────────────────────────────
@@ -328,15 +292,25 @@ const API = {
 
     // Quiz Routes
     if (endpoint === '/quizzes' && method === 'GET') {
+      // Merge LocalSync custom questions for accurate counts
+      const allQuestions = (() => {
+        const customQs = LocalSync.getCustomQuestions();
+        const deletedQIds = LocalSync.getDeletedQuestionIds();
+        const qMap = new Map();
+        questions.forEach(q => qMap.set(String(q.id), q));
+        customQs.forEach(q => qMap.set(String(q.id), { ...qMap.get(String(q.id)), ...q }));
+        return Array.from(qMap.values()).filter(q => !deletedQIds.includes(String(q.id)));
+      })();
+
       const now = new Date();
       const list = quizzes.map(q => {
         let scheduleStatus = 'ACTIVE';
         if (q.start_time && new Date(q.start_time) > now) scheduleStatus = 'UPCOMING';
         else if (q.end_time && new Date(q.end_time) < now) scheduleStatus = 'EXPIRED';
-        const qCount = questions.filter(qs => qs.quiz_id === q.id || qs.quizId === q.id).length;
-        const qMarks = questions.filter(qs => qs.quiz_id === q.id || qs.quizId === q.id).reduce((s,q) => s + (q.marks || q.points || 1), 0);
+        const qCount = allQuestions.filter(qs => String(qs.quiz_id || qs.quizId) === String(q.id)).length;
+        const qMarks = allQuestions.filter(qs => String(qs.quiz_id || qs.quizId) === String(q.id)).reduce((s, qs) => s + (qs.marks || qs.points || 1), 0);
         const maxAt = Number(q.maxAttempts || q.max_attempts) || 0;
-        const myAt = results.filter(r => r.quizId === q.id).length;
+        const myAt = results.filter(r => String(r.quizId) === String(q.id)).length;
         return {
           ...q,
           category: q.category || q.subject || 'General',
@@ -538,26 +512,40 @@ const API = {
 
     // Questions Routes
     if (endpoint === '/questions' && method === 'POST') {
+      const opts = body.options || [];
       const newQ = {
-        id: Date.now(),
+        id: `q_${Date.now()}`,
         quiz_id: body.quiz_id || body.quizId,
         quizId: body.quiz_id || body.quizId,
         question_text: body.question_text || body.questionText,
         questionText: body.question_text || body.questionText,
         code_snippet: body.code_snippet || body.codeSnippet || null,
         codeSnippet: body.code_snippet || body.codeSnippet || null,
-        option_a: body.option_a,
-        option_b: body.option_b,
-        option_c: body.option_c,
-        option_d: body.option_d,
+        type: body.type || 'mcq',
+        options: opts,
+        option_a: opts[0] || body.option_a || '',
+        option_b: opts[1] || body.option_b || '',
+        option_c: opts[2] || body.option_c || '',
+        option_d: opts[3] || body.option_d || '',
         correct_option: body.correct_option || body.correctOption,
         correctOption: body.correct_option || body.correctOption,
+        correctAnswer: body.correct_option || body.correctOption,
         explanation: body.explanation || '',
-        points: body.points || body.marks || 1
+        marks: Number(body.marks || body.points) || 1,
+        points: Number(body.marks || body.points) || 1
       };
       questions.push(newQ);
       LocalStore.set('questions', questions);
+      LocalSync.addCustomQuestion(newQ);
       return { ok: true, msg: 'Question created!', questionId: newQ.id };
+    }
+
+    if (endpoint.startsWith('/questions/') && method === 'DELETE') {
+      const qId = String(endpoint.split('/')[2]);
+      const filtered = questions.filter(q => String(q.id) !== qId);
+      LocalStore.set('questions', filtered);
+      LocalSync.addDeletedQuestionId(qId);
+      return { ok: true, msg: 'Question deleted.' };
     }
 
     // Results Routes
