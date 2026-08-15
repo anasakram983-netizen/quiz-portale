@@ -418,8 +418,8 @@ async function renderCatalog() {
   }
 
   container.innerHTML = quizzes.map((q, idx) => {
-    const attempts     = myResults.filter(r => r.quizId === q.id);
-    const attemptCount = q.attemptCount ?? attempts.length;
+    const attempts     = myResults.filter(r => String(r.quizId) === String(q.id));
+    const attemptCount = (q.myAttempts !== undefined && q.myAttempts > 0) ? q.myAttempts : attempts.length;
     const latestAttempt= attempts[0];
     const subjectEmoji = { 'General Knowledge':'🌍', 'Programming':'💻', 'Science':'🔬', 'Math':'📐', 'History':'📜', 'English':'📖' };
     const icon         = q.emoji || subjectEmoji[q.subject] || '📝';
@@ -1014,6 +1014,9 @@ function renderResult(result, questions) {
   currentResultForCert = result;
   const el = document.getElementById('result-screen-wrap');
   el.classList.remove('hidden');
+  setTimeout(() => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
 
   const { score, totalMarks, percentage, passed, correct, wrong, skipped, timeTaken, quizTitle, isDisqualified, answers } = result;
   const emoji = isDisqualified ? '🚨' : (passed ? '🏆' : '😔');
