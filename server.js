@@ -10,7 +10,12 @@ const express   = require('express');
 const cors      = require('cors');
 const jwt       = require('jsonwebtoken');
 const bcrypt    = require('bcryptjs');
-const mongoose  = require('mongoose');
+let mongoose = null;
+try {
+  mongoose = require('mongoose');
+} catch (e) {
+  console.log('Mongoose module optional');
+}
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'quizportal-super-secret-2025';
@@ -20,7 +25,7 @@ const PORT       = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
 let mongoConnected = false;
 
-if (MONGODB_URI) {
+if (mongoose && MONGODB_URI) {
   mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
     .then(async () => {
       mongoConnected = true;
