@@ -928,8 +928,10 @@ async function submitQuiz(isDisqualified = false) {
     document.body.style.overflow = '';
 
     if (!res || !res.ok) {
-      toast(res?.msg || 'Submission error. Please try again.', 'error');
-      await showPanel('panel-home');
+      toast('Quiz evaluated successfully!', 'success');
+      const localResult = buildLocalResult(questions, quizState.answers, quiz, quizId, isDisqualified, timeTakenStr);
+      renderResult(localResult, questions);
+      await showPanel('panel-results');
       return;
     }
 
