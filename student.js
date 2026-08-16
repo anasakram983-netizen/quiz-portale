@@ -491,6 +491,19 @@ let quizState = {
 };
 
 async function startQuiz(quizId) {
+  // Enforce Max Attempts Limit Guard
+  try {
+    const allQuizzes = await API.Quiz.getAll();
+    const targetQuiz = allQuizzes.find(q => String(q.id) === String(quizId));
+    if (targetQuiz) {
+      const maxAt = Number(targetQuiz.maxAttempts !== undefined ? targetQuiz.maxAttempts : (targetQuiz.max_attempts || 0)) || 0;
+      const myAt  = targetQuiz.myAttempts || 0;
+      if (maxAt > 0 && myAt >= maxAt) {
+        return toast(`🚫 Maximum attempt limit reached for this quiz (${myAt}/${maxAt}). Retake blocked.`, 'warning');
+      }
+    }
+  } catch(e){}
+
   toast('Initializing secure exam session...', 'info');
   const sessionRes = await API.Quiz.getSession(quizId);
 
@@ -1012,7 +1025,7 @@ function buildLocalResult(questions, answers, quiz, quizId, isDisqualified, time
 // ════════════════════════════════════════════════════════════
 let currentResultForCert = null;
 
-function renderResult(result, questions) {
+async function renderResult(result, questions) {
   currentResultForCert = result;
   const el = document.getElementById('result-screen-wrap');
   el.classList.remove('hidden');
@@ -1025,12 +1038,23 @@ function renderResult(result, questions) {
   const pct = Math.round(percentage);
   const circleColor = passed ? '#6c63ff' : '#ff5252';
 
-  // Check if retake is allowed
+  // Check if retake is allowed by computing exact attempts and maxAttempts
   const resultQuizId = result.quizId || (quizState?.quizId);
   let canRetake = true;
-  if (result.maxAttempts && result.maxAttempts > 0 && result.attemptCount) {
-    canRetake = result.attemptCount < result.maxAttempts;
-  }
+  let attemptsDone = 1;
+  let maxAttemptsLimit = 0;
+
+  try {
+    const allQuizzes = await API.Quiz.getAll();
+    const targetQuiz = allQuizzes.find(q => String(q.id) === String(resultQuizId));
+    if (targetQuiz) {
+      maxAttemptsLimit = Number(targetQuiz.maxAttempts !== undefined ? targetQuiz.maxAttempts : (targetQuiz.max_attempts || 0)) || 0;
+      attemptsDone = targetQuiz.myAttempts || 1;
+      if (maxAttemptsLimit > 0) {
+        canRetake = attemptsDone < maxAttemptsLimit;
+      }
+    }
+  } catch(e){}
 
   // Build per-question DETAILED answer review — correct ans + explanation
   let reviewHtml = '';
@@ -1213,7 +1237,7 @@ function renderResult(result, questions) {
       <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
         <button class="btn btn-secondary" onclick="document.getElementById('result-screen-wrap').classList.add('hidden');showPanel('panel-home')">🔙 Back to Catalog</button>
         ${passed ? `<button class="btn btn-success" onclick="openCertificateModal()">📜 Download Certificate</button>` : ''}
-        ${canRetake && resultQuizId ? `<button class="btn btn-primary" onclick="document.getElementById('result-screen-wrap').classList.add('hidden');startQuiz('${resultQuizId}')">🔁 Retake Quiz</button>` : `<span style="font-size:0.82rem;color:var(--warning);align-self:center;">🔒 Attempt limit reached — no retake allowed</span>`}
+        ${canRetake && resultQuizId ? `<button class="btn btn-primary" onclick="document.getElementById('result-screen-wrap').classList.add('hidden');startQuiz('${resultQuizId}')">🔁 Retake Quiz</button>` : `<span class="badge badge-warning" style="font-size:0.85rem;padding:8px 16px;align-self:center;">🔒 Attempt limit reached (${attemptsDone}/${maxAttemptsLimit}) — No retake allowed</span>`}
       </div>
     </div>
     ${reviewHtml}
