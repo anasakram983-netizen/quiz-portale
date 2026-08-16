@@ -660,12 +660,6 @@ const API = {
 
     async getMe() {
       const token = API.getToken();
-      if (token && token.startsWith('mock-jwt-')) {
-        try {
-          const u = localStorage.getItem('oqp_active_user');
-          if (u) return JSON.parse(u);
-        } catch(e){}
-      }
       if (token) {
         const data = await API.request('/auth/me');
         if (data.ok && data.user) {
@@ -720,9 +714,15 @@ const API = {
       const deletedIds = LocalSync.getDeletedQuizIds();
 
       const allMap = new Map();
-      serverQuizzes.forEach(q => allMap.set(String(q.id), q));
-      localQuizzes.forEach(q => { if (!allMap.has(String(q.id))) allMap.set(String(q.id), q); });
-      customQuizzes.forEach(q => allMap.set(String(q.id), { ...allMap.get(String(q.id)), ...q }));
+      if (data.ok && Array.isArray(data.quizzes) && data.quizzes.length > 0) {
+        // Server online data takes priority for real-time cross-device sync
+        data.quizzes.forEach(q => allMap.set(String(q.id), q));
+        customQuizzes.forEach(q => { if (!allMap.has(String(q.id))) allMap.set(String(q.id), q); });
+      } else {
+        serverQuizzes.forEach(q => allMap.set(String(q.id), q));
+        localQuizzes.forEach(q => { if (!allMap.has(String(q.id))) allMap.set(String(q.id), q); });
+        customQuizzes.forEach(q => allMap.set(String(q.id), { ...allMap.get(String(q.id)), ...q }));
+      }
 
       let finalQuizzes = Array.from(allMap.values()).filter(q => !deletedIds.includes(String(q.id)));
 
